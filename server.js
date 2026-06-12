@@ -102,7 +102,7 @@ app.post('/confirmation', async (req, res) => {
     const sheets = google.sheets({ version: 'v4', auth: client });
 
     const safeTimestamp = (timestamp || new Date().toISOString()).replace(/[:.]/g, '-');
-    const baseName = `${orderNum}_${safeTimestamp}`;
+    const baseName = `${orderNum}`;
 
     // Upload images
     const photoLink = await uploadImageToDrive(drive, photo, `${baseName}_תמונה.jpg`, CONFIRMATIONS_FOLDER_ID);
