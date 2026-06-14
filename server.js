@@ -23,14 +23,12 @@ function isChecked(val) {
   return s === 'TRUE' || s === 'V' || s === 'YES' || s === '1' || s === 'כן';
 }
 
-// DEBUG endpoint - shows raw rows from sheet
 app.get('/api/debug-rows', async (req, res) => {
   try {
     const client = await auth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:G' });
-    const rows = (resp.data.values || []).slice(0, 5);
-    res.json({ sheetId: SHEET_ID, orderSheetName: ORDERS_SHEET_NAME, rows });
+    res.json({ orderSheetName: ORDERS_SHEET_NAME, rows: (resp.data.values || []).slice(0, 5) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -44,11 +42,11 @@ app.get('/api/dashboard-data', async (req, res) => {
     const costByOrderNum = {};
     orderRows.forEach(row => {
       const orderNum = row[0];
-      const cost = parseFloat(row[4]) || 0;
-      const gVal = row[6];
+      const cost = parseFloat(String(row[4] || '').replace(/[^0-9.]/g, '')) || 0;
+      const gVal = row[6]; // FALSE = לא סופק, TRUE = סופק
       if (orderNum) {
         costByOrderNum[String(orderNum).trim()] = cost;
-        if (isChecked(gVal)) { openOrders++; sumOpen += cost; }
+        if (!isChecked(gVal)) { openOrders++; sumOpen += cost; }
       }
     });
     const serviceResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:C' });
@@ -63,7 +61,7 @@ app.get('/api/dashboard-data', async (req, res) => {
 });
 
 async function uploadImageToDrive(drive, base64Data, fileName, folderId) {
-  const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
+  const matches = base64Data.match(/^data:(image/w+);base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
   const { Readable } = require('stream');
   const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId] }, media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) }, fields: 'id, webViewLink' });
