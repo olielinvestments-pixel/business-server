@@ -37,10 +37,10 @@ app.get('/api/dashboard-data', async (req, res) => {
     orderRows.forEach(row => {
       const orderNum = row[0];
       const cost = parseFloat(row[4]) || 0;
-      const countG = parseFloat(row[6]) || 0;
+      const gVal = row[6]; // עמודה G: checkbox - TRUE = לא סופק
       if (orderNum) {
         costByOrderNum[String(orderNum).trim()] = cost;
-        if (countG > 0) { openOrders++; sumOpen += cost; }
+        if (isChecked(gVal)) { openOrders++; sumOpen += cost; }
       }
     });
     const serviceResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:C' });
@@ -55,7 +55,7 @@ app.get('/api/dashboard-data', async (req, res) => {
 });
 
 async function uploadImageToDrive(drive, base64Data, fileName, folderId) {
-  const matches = base64Data.match(/^data:(image/w+);base64,(.+)$/);
+  const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
   const { Readable } = require('stream');
   const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId] }, media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) }, fields: 'id, webViewLink' });
