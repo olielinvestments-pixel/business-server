@@ -5,86 +5,43 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>דשבורד עסקי</title>
 <style>
-  body { font-family: Arial, sans-serif; background:#f4f5f7; margin:0; padding:20px; }
-  h1 { text-align:center; color:#333; }
-  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; max-width:700px; margin:20px auto; }
-  .card { background:white; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); text-align:center; }
-  .card .num { font-size:36px; font-weight:bold; color:#2563eb; }
-  .card .label { color:#666; margin-top:8px; font-size:14px; }
-  .card.money .num { color:#16a34a; }
-  .status { text-align:center; color:#999; margin-top:30px; font-size:13px;}
-  .err { color:#dc2626; text-align:center; margin-top:20px; }
+body { font-family: Arial, sans-serif; background:#f4f5f7; margin:0; padding:20px; }
+h1 { text-align:center; color:#333; }
+.grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; max-width:700px; margin:20px auto; }
+.card { background:white; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); text-align:center; }
+.card .num { font-size:36px; font-weight:bold; color:#2563eb; }
+.card .label { color:#666; margin-top:8px; font-size:14px; }
+.card.money .num { color:#16a34a; }
+.status { text-align:center; color:#999; margin-top:30px; font-size:13px; }
+.err { color:#dc2626; }
+.refresh-btn { display:block; margin:16px auto 0; padding:8px 24px; background:#2563eb; color:white; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
 </style>
 </head>
 <body>
-<h1>📊 דשבורד עסקי</h1>
+<h1>דשבורד עסקי</h1>
 <div class="grid">
   <div class="card"><div class="num" id="ordersCount">-</div><div class="label">הזמנות פתוחות (לא סופקו)</div></div>
-  <div class="card money"><div class="num" id="ordersSum">-</div><div class="label">סכום הזמנות פתוחות (₪)</div></div>
+  <div class="card money"><div class="num" id="ordersSum">-</div><div class="label">סכום הזמנות פתוחות (&#8362;)</div></div>
   <div class="card"><div class="num" id="serviceCount">-</div><div class="label">קריאות שירות פתוחות</div></div>
-  <div class="card money"><div class="num" id="serviceSum">-</div><div class="label">סכום קריאות שירות פתוחות (₪)</div></div>
+  <div class="card money"><div class="num" id="serviceSum">-</div><div class="label">סכום קריאות שירות פתוחות (&#8362;)</div></div>
 </div>
 <div class="status" id="status">טוען נתונים...</div>
-
+<button class="refresh-btn" onclick="load()">רענן</button>
 <script>
-const SHEET_ID = "1_nM8UUSR8VqnhAoFUx-T2aiw5NnNt8tMQATRIIQ6Ib4";
-
-// שמות הלשוניות (תצטרך לעדכן אם השם שונה בדיוק)
-const ORDERS_SHEET_NAME = "מעקב הזמנות";
-const SERVICE_SHEET_NAME = "שירות";
-
-function gvizUrl(sheetName) {
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
-}
-
-function fetchSheet(sheetName) {
-  return fetch(gvizUrl(sheetName))
-    .then(r => r.text())
-    .then(text => {
-      const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
-      return json.table.rows.map(row => row.c.map(cell => cell ? cell.v : null));
-    });
-}
-
 async function load() {
+  document.getElementById('status').textContent = 'טוען נתונים...';
   try {
-    // הזמנות: עמודה E = עלות (index 4), עמודה F = אספקה מיידית? checkbox (index 5)
-    const orders = await fetchSheet(ORDERS_SHEET_NAME);
-    let openOrders = 0, sumOpen = 0;
-    const costByOrderNum = {}; // מספר הזמנה -> עלות
-    orders.forEach(row => {
-      const delivered = row[5]; // checkbox עמודה F
-      const cost = parseFloat(row[4]) || 0;
-      const orderNum = row[0]; // עמודה A - מספר הזמנה
-      if (orderNum) {
-        costByOrderNum[String(orderNum).trim()] = cost;
-        if (!delivered) {
-          openOrders++;
-          sumOpen += cost;
-        }
-      }
-    });
-    document.getElementById("ordersCount").textContent = openOrders;
-    document.getElementById("ordersSum").textContent = sumOpen.toLocaleString();
-
-    // שירות: עמודה C = תוקן checkbox (index 2), עמודה A = מספר הזמנה (לשליפת עלות מההזמנות)
-    const service = await fetchSheet(SERVICE_SHEET_NAME);
-    let openService = 0, serviceSum = 0;
-    service.forEach(row => {
-      const fixed = row[2];
-      const orderNum = row[0];
-      if (orderNum && !fixed) {
-        openService++;
-        const cost = costByOrderNum[String(orderNum).trim()] || 0;
-        serviceSum += cost;
-      }
-    });
-    document.getElementById("serviceCount").textContent = openService;
-    document.getElementById("serviceSum").textContent = serviceSum.toLocaleString();
-
-    document.getElementById("status").textContent = "עודכן: " + new Date().toLocaleString('he-IL');
-  } catch (e) {
-    document.getElementById("status").innerHTML = '<div class="err">שגיאה בטעינת הנתונים: ' + e.message + '<br>בדוק שהגיליון משותף כ"כל מי שיש לו את הקישור - צופה" ושהשמות של הלשוניות נכונים.</div>';
+    const r = await fetch('/api/dashboard-data');
+    if (!r.ok) throw new Error('שגיאת שרת: ' + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    document.getElementById('ordersCount').textContent = d.openOrders;
+    document.getElementById('ordersSum').textContent = Number(d.sumOpen).toLocaleString();
+    document.getElementById('serviceCount').textContent = d.openService;
+    document.getElementById('serviceSum').textContent = Number(d.serviceSum).toLocaleString();
+    document.getElementById('status').textContent = 'עודכן: ' + d.updatedAt;
+  } catch(e) {
+    document.getElementById('status').innerHTML = '<span class="err">שגיאה: ' + e.message + '</span>';
   }
 }
 load();
