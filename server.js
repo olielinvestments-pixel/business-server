@@ -4,12 +4,9 @@ const path = require('path');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
-
 const PORT = process.env.PORT || 3000;
-
 const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
 const auth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/spreadsheets'] });
-
 const SHEET_ID = process.env.SHEET_ID;
 const CONFIRMATIONS_FOLDER_ID = process.env.CONFIRMATIONS_FOLDER_ID;
 const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'אישורי קבלה';
@@ -26,6 +23,17 @@ function isChecked(val) {
   return s === 'TRUE' || s === 'V' || s === 'YES' || s === '1' || s === 'כן';
 }
 
+// DEBUG endpoint - shows raw rows from sheet
+app.get('/api/debug-rows', async (req, res) => {
+  try {
+    const client = await auth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:G' });
+    const rows = (resp.data.values || []).slice(0, 5);
+    res.json({ sheetId: SHEET_ID, orderSheetName: ORDERS_SHEET_NAME, rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/dashboard-data', async (req, res) => {
   try {
     const client = await auth.getClient();
@@ -37,7 +45,7 @@ app.get('/api/dashboard-data', async (req, res) => {
     orderRows.forEach(row => {
       const orderNum = row[0];
       const cost = parseFloat(row[4]) || 0;
-      const gVal = row[6]; // עמודה G: checkbox - TRUE = לא סופק
+      const gVal = row[6];
       if (orderNum) {
         costByOrderNum[String(orderNum).trim()] = cost;
         if (isChecked(gVal)) { openOrders++; sumOpen += cost; }
