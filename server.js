@@ -114,11 +114,16 @@ async function createConfirmationDocx(orderNum, confirmations, photoBase64, sign
       children: [new TextRun({ text: 'הצהרות שאושרו:', bold: true, size: 24, font: 'Arial' })],
       spacing: { after: 100 }
     }),
-    ...(confirmations || []).map(c => new Paragraph({
+    new Paragraph({
       alignment: AlignmentType.RIGHT,
-      children: [new TextRun({ text: '✓  ' + c, size: 22, font: 'Arial', color: '333333' })],
+      children: [new TextRun({ text: '✓  אני מאשר/ת כי קיבלתי את המוצר/ים בהתאם להזמנה שביצעתי. בדקתי את המוצר/ים בעת המסירה ואני מאשר/ת כי הם התקבלו במצב תקין, ללא נזק נראה לעין, ותואמים להזמנה שבוצעה. בחתימתי מטה אני מאשר/ת את קבלת המוצר/ים ואת שביעות רצוני ממצבם בעת המסירה.', size: 22, font: 'Arial', color: '333333' })],
+      spacing: { after: 120 }
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: '✓  ידוע לי כי יתרת התשלום בגין המוצר משולמת ישירות לספק, וכי באחריותי לקבל מהספק אסמכתא עבור התשלום.', size: 22, font: 'Arial', color: '333333' })],
       spacing: { after: 80 }
-    })),
+    }),
     dividerParagraph(),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
