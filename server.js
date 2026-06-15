@@ -2,6 +2,8 @@ const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
 const PDFDocument = require('pdfkit');
+const https = require('https');
+const fs = require('fs');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
@@ -22,6 +24,32 @@ const CONFIRMATIONS_FOLDER_ID = process.env.CONFIRMATIONS_FOLDER_ID;
 const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'אישורי קבלה';
 const ORDERS_SHEET_NAME = process.env.ORDERS_SHEET_NAME || 'מעקב הזמנות';
 const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
+const FONT_PATH = '/tmp/Alef-Regular.ttf';
+const FONT_BOLD_PATH = '/tmp/Alef-Bold.ttf';
+
+function downloadFile(url, dest) {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(dest)) return resolve();
+    const file = fs.createWriteStream(dest);
+    https.get(url, res => {
+      if (res.statusCode === 302 || res.statusCode === 301) {
+        file.close();
+        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+      }
+      res.pipe(file);
+      file.on('finish', () => file.close(resolve));
+    }).on('error', err => { fs.unlink(dest, () => {}); reject(err); });
+  });
+}
+
+async function ensureFonts() {
+  await Promise.all([
+    downloadFile('https://github.com/googlefonts/alef/raw/main/fonts/ttf/Alef-Regular.ttf', FONT_PATH),
+    downloadFile('https://github.com/googlefonts/alef/raw/main/fonts/ttf/Alef-Bold.ttf', FONT_BOLD_PATH)
+  ]);
+}
+
+ensureFonts().catch(console.error);
 
 app.get('/', (req, res) => res.send('Server is running ✅'));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
@@ -76,7 +104,12 @@ function base64ToBuffer(base64Data) {
   return { mimeType: matches[1], buffer: Buffer.from(matches[2], 'base64') };
 }
 
+function reverseHebrew(text) {
+  return text.split('').reverse().join('');
+}
+
 async function createConfirmationPDF(orderNum, confirmations, photoBase64, signatureBase64, timestamp) {
+  await ensureFonts();
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 50 });
     const chunks = [];
@@ -84,23 +117,30 @@ async function createConfirmationPDF(orderNum, confirmations, photoBase64, signa
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
+    const hasFont = fs.existsSync(FONT_PATH);
+    if (hasFont) {
+      doc.registerFont('Alef', FONT_PATH);
+      doc.registerFont('Alef-Bold', fs.existsSync(FONT_BOLD_PATH) ? FONT_BOLD_PATH : FONT_PATH);
+    }
+
+    const regular = hasFont ? 'Alef' : 'Helvetica';
+    const bold = hasFont ? 'Alef-Bold' : 'Helvetica-Bold';
     const dateStr = new Date(timestamp || Date.now()).toLocaleString('he-IL');
 
-    doc.font('Helvetica-Bold').fontSize(20).text('אישור קבלת מוצר', { align: 'center' });
+    doc.font(bold).fontSize(20).text('אישור קבלת מוצר', { align: 'center' });
     doc.moveDown(0.3);
-    doc.font('Helvetica').fontSize(11).fillColor('#888').text(dateStr, { align: 'center' });
+    doc.font(regular).fontSize(11).fillColor('#888').text(dateStr, { align: 'center' });
     doc.moveDown(0.5);
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
     doc.moveDown(0.5);
 
-    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('מספר הזמנה: ', { continued: true });
-    doc.font('Helvetica').text(String(orderNum));
+    doc.fillColor('#000').font(bold).fontSize(12).text('מספר הזמנה: ' + String(orderNum), { align: 'right' });
     doc.moveDown(0.8);
 
-    doc.font('Helvetica-Bold').fontSize(12).text('הצהרות שאושרו:');
+    doc.font(bold).fontSize(12).text('הצהרות שאושרו:', { align: 'right' });
     doc.moveDown(0.3);
     (confirmations || []).forEach(c => {
-      doc.font('Helvetica').fontSize(11).fillColor('#333').text('✓  ' + c, { indent: 10 });
+      doc.font(regular).fontSize(11).fillColor('#333').text('✓  ' + c, { align: 'right' });
       doc.moveDown(0.3);
     });
     doc.moveDown(0.5);
@@ -108,28 +148,28 @@ async function createConfirmationPDF(orderNum, confirmations, photoBase64, signa
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
     doc.moveDown(0.8);
 
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text('תמונת המוצר:');
+    doc.font(bold).fontSize(12).fillColor('#000').text('תמונת המוצר:', { align: 'right' });
     doc.moveDown(0.3);
     try {
       const photo = base64ToBuffer(photoBase64);
       doc.image(photo.buffer, { fit: [495, 280], align: 'center' });
-    } catch(e) { doc.font('Helvetica').fontSize(11).fillColor('#888').text('תמונה לא זמינה'); }
+    } catch(e) { doc.font(regular).fontSize(11).fillColor('#888').text('תמונה לא זמינה'); }
     doc.moveDown(0.8);
 
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
     doc.moveDown(0.8);
 
-    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text('חתימת הלקוח:');
+    doc.font(bold).fontSize(12).fillColor('#000').text('חתימת הלקוח:', { align: 'right' });
     doc.moveDown(0.3);
     try {
       const sig = base64ToBuffer(signatureBase64);
       doc.image(sig.buffer, { fit: [495, 120], align: 'center' });
-    } catch(e) { doc.font('Helvetica').fontSize(11).fillColor('#888').text('חתימה לא זמינה'); }
+    } catch(e) { doc.font(regular).fontSize(11).fillColor('#888').text('חתימה לא זמינה'); }
     doc.moveDown(1);
 
     doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
     doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(9).fillColor('#aaa').text('מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', { align: 'center' });
+    doc.font(regular).fontSize(9).fillColor('#aaa').text('מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', { align: 'center' });
 
     doc.end();
   });
@@ -161,10 +201,8 @@ app.post('/confirmation', async (req, res) => {
     if (!orderNum || !photo || !signature) return res.status(400).json({ error: 'Missing required fields' });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
-
     const pdfBuffer = await createConfirmationPDF(orderNum, confirmations, photo, signature, timestamp);
     const pdfLink = await uploadPDFToDrive(pdfBuffer, orderNum + '_אישור_קבלה.pdf');
-
     await ensureSheetExists(sheets, SHEET_ID, CONFIRMATIONS_SHEET_NAME);
     await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, pdfLink, 'נשלח']] } });
     res.json({ success: true, pdfLink });
