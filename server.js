@@ -1,9 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
-const PDFDocument = require('pdfkit');
-const https = require('https');
-const fs = require('fs');
+const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, BorderStyle } = require('docx');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
@@ -24,32 +22,6 @@ const CONFIRMATIONS_FOLDER_ID = process.env.CONFIRMATIONS_FOLDER_ID;
 const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'אישורי קבלה';
 const ORDERS_SHEET_NAME = process.env.ORDERS_SHEET_NAME || 'מעקב הזמנות';
 const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
-const FONT_PATH = '/tmp/Alef-Regular.ttf';
-const FONT_BOLD_PATH = '/tmp/Alef-Bold.ttf';
-
-function downloadFile(url, dest) {
-  return new Promise((resolve, reject) => {
-    if (fs.existsSync(dest)) return resolve();
-    const file = fs.createWriteStream(dest);
-    https.get(url, res => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        file.close();
-        return downloadFile(res.headers.location, dest).then(resolve).catch(reject);
-      }
-      res.pipe(file);
-      file.on('finish', () => file.close(resolve));
-    }).on('error', err => { fs.unlink(dest, () => {}); reject(err); });
-  });
-}
-
-async function ensureFonts() {
-  await Promise.all([
-    downloadFile('https://fonts.gstatic.com/s/alef/v21/FeVfS0NQpLYgrjJbC5FxxbU.ttf', FONT_PATH),
-    downloadFile('https://fonts.gstatic.com/s/alef/v21/FeVQS0NQpLYglo50L5la2bxii28.ttf', FONT_BOLD_PATH)
-  ]);
-}
-
-ensureFonts().catch(console.error);
 
 app.get('/', (req, res) => res.send('Server is running ✅'));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
@@ -99,88 +71,99 @@ app.get('/api/dashboard-data', async (req, res) => {
 });
 
 function base64ToBuffer(base64Data) {
-  const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
+  const matches = base64Data.match(/^data:(image\/(\w+));base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
-  return { mimeType: matches[1], buffer: Buffer.from(matches[2], 'base64') };
+  return { mimeType: matches[1], ext: matches[2], buffer: Buffer.from(matches[3], 'base64') };
 }
 
-function reverseHebrew(text) {
-  return text.split('').reverse().join('');
-}
-
-async function createConfirmationPDF(orderNum, confirmations, photoBase64, signatureBase64, timestamp) {
-  await ensureFonts();
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
-    const chunks = [];
-    doc.on('data', chunk => chunks.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(chunks)));
-    doc.on('error', reject);
-
-    const hasFont = fs.existsSync(FONT_PATH);
-    if (hasFont) {
-      doc.registerFont('Alef', FONT_PATH);
-      doc.registerFont('Alef-Bold', fs.existsSync(FONT_BOLD_PATH) ? FONT_BOLD_PATH : FONT_PATH);
-    }
-
-    const regular = hasFont ? 'Alef' : 'Helvetica';
-    const bold = hasFont ? 'Alef-Bold' : 'Helvetica-Bold';
-    const dateStr = new Date(timestamp || Date.now()).toLocaleString('he-IL');
-
-    doc.font(bold).fontSize(20).text('אישור קבלת מוצר', { align: 'center' });
-    doc.moveDown(0.3);
-    doc.font(regular).fontSize(11).fillColor('#888').text(dateStr, { align: 'center' });
-    doc.moveDown(0.5);
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
-    doc.moveDown(0.5);
-
-    doc.fillColor('#000').font(bold).fontSize(12).text('מספר הזמנה: ' + String(orderNum), { align: 'right' });
-    doc.moveDown(0.8);
-
-    doc.font(bold).fontSize(12).text('הצהרות שאושרו:', { align: 'right' });
-    doc.moveDown(0.3);
-    (confirmations || []).forEach(c => {
-      doc.font(regular).fontSize(11).fillColor('#333').text('✓  ' + c, { align: 'right' });
-      doc.moveDown(0.3);
-    });
-    doc.moveDown(0.5);
-
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
-    doc.moveDown(0.8);
-
-    doc.font(bold).fontSize(12).fillColor('#000').text('תמונת המוצר:', { align: 'right' });
-    doc.moveDown(0.3);
-    try {
-      const photo = base64ToBuffer(photoBase64);
-      doc.image(photo.buffer, { fit: [495, 280], align: 'center' });
-    } catch(e) { doc.font(regular).fontSize(11).fillColor('#888').text('תמונה לא זמינה'); }
-    doc.moveDown(0.8);
-
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
-    doc.moveDown(0.8);
-
-    doc.font(bold).fontSize(12).fillColor('#000').text('חתימת הלקוח:', { align: 'right' });
-    doc.moveDown(0.3);
-    try {
-      const sig = base64ToBuffer(signatureBase64);
-      doc.image(sig.buffer, { fit: [495, 120], align: 'center' });
-    } catch(e) { doc.font(regular).fontSize(11).fillColor('#888').text('חתימה לא זמינה'); }
-    doc.moveDown(1);
-
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
-    doc.moveDown(0.5);
-    doc.font(regular).fontSize(9).fillColor('#aaa').text('מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', { align: 'center' });
-
-    doc.end();
+function dividerParagraph() {
+  return new Paragraph({
+    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC', space: 1 } },
+    spacing: { after: 200 }
   });
 }
 
-async function uploadPDFToDrive(pdfBuffer, fileName) {
+async function createConfirmationDocx(orderNum, confirmations, photoBase64, signatureBase64, timestamp) {
+  const dateStr = new Date(timestamp || Date.now()).toLocaleString('he-IL');
+
+  const photo = base64ToBuffer(photoBase64);
+  const sig = base64ToBuffer(signatureBase64);
+
+  const children = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: 'אישור קבלת מוצר', bold: true, size: 40, font: 'Arial' })],
+      spacing: { after: 100 }
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: dateStr, size: 20, color: '888888', font: 'Arial' })],
+      spacing: { after: 200 }
+    }),
+    dividerParagraph(),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [
+        new TextRun({ text: 'מספר הזמנה: ', bold: true, size: 26, font: 'Arial' }),
+        new TextRun({ text: String(orderNum), size: 26, font: 'Arial' })
+      ],
+      spacing: { after: 200 }
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: 'הצהרות שאושרו:', bold: true, size: 24, font: 'Arial' })],
+      spacing: { after: 100 }
+    }),
+    ...(confirmations || []).map(c => new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: '✓  ' + c, size: 22, font: 'Arial', color: '333333' })],
+      spacing: { after: 80 }
+    })),
+    dividerParagraph(),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: 'תמונת המוצר:', bold: true, size: 24, font: 'Arial' })],
+      spacing: { after: 100 }
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new ImageRun({ data: photo.buffer, transformation: { width: 450, height: 300 }, type: photo.ext === 'jpg' ? 'jpg' : 'png' })],
+      spacing: { after: 200 }
+    }),
+    dividerParagraph(),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [new TextRun({ text: 'חתימת הלקוח:', bold: true, size: 24, font: 'Arial' })],
+      spacing: { after: 100 }
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new ImageRun({ data: sig.buffer, transformation: { width: 400, height: 120 }, type: sig.ext === 'jpg' ? 'jpg' : 'png' })],
+      spacing: { after: 200 }
+    }),
+    dividerParagraph(),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text: 'מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', size: 18, color: 'AAAAAA', font: 'Arial' })]
+    })
+  ];
+
+  const doc = new Document({
+    sections: [{
+      properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } } },
+      children
+    }]
+  });
+
+  return await Packer.toBuffer(doc);
+}
+
+async function uploadFileToDrive(buffer, fileName, mimeType) {
   const { Readable } = require('stream');
   const drive = google.drive({ version: 'v3', auth: oauthClient });
   const file = await drive.files.create({
-    requestBody: { name: fileName, parents: [CONFIRMATIONS_FOLDER_ID], mimeType: 'application/pdf' },
-    media: { mimeType: 'application/pdf', body: Readable.from(pdfBuffer) },
+    requestBody: { name: fileName, parents: [CONFIRMATIONS_FOLDER_ID], mimeType },
+    media: { mimeType, body: Readable.from(buffer) },
     fields: 'id, webViewLink'
   });
   await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
@@ -191,7 +174,7 @@ async function ensureSheetExists(sheets, sheetId, sheetName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   if (!meta.data.sheets.some(s => s.properties.title === sheetName)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:D1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','קישור לאישור PDF','סטטוס']] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:D1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','קישור לאישור','סטטוס']] } });
   }
 }
 
@@ -201,11 +184,11 @@ app.post('/confirmation', async (req, res) => {
     if (!orderNum || !photo || !signature) return res.status(400).json({ error: 'Missing required fields' });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
-    const pdfBuffer = await createConfirmationPDF(orderNum, confirmations, photo, signature, timestamp);
-    const pdfLink = await uploadPDFToDrive(pdfBuffer, orderNum + '_אישור_קבלה.pdf');
+    const docBuffer = await createConfirmationDocx(orderNum, confirmations, photo, signature, timestamp);
+    const docLink = await uploadFileToDrive(docBuffer, orderNum + '_אישור_קבלה.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     await ensureSheetExists(sheets, SHEET_ID, CONFIRMATIONS_SHEET_NAME);
-    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, pdfLink, 'נשלח']] } });
-    res.json({ success: true, pdfLink });
+    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, docLink, 'נשלח']] } });
+    res.json({ success: true, pdfLink: docLink });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
