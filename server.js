@@ -64,8 +64,17 @@ async function uploadImageToDrive(drive, base64Data, fileName, folderId) {
   const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
   const { Readable } = require('stream');
-  const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId] }, media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) }, fields: 'id, webViewLink' });
-  await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
+  const file = await drive.files.create({
+    requestBody: { name: fileName, parents: [folderId] },
+    media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) },
+    fields: 'id, webViewLink',
+    supportsAllDrives: true
+  });
+  await drive.permissions.create({
+    fileId: file.data.id,
+    requestBody: { role: 'reader', type: 'anyone' },
+    supportsAllDrives: true
+  });
   return file.data.webViewLink;
 }
 
