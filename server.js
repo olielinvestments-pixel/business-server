@@ -43,7 +43,7 @@ app.get('/api/dashboard-data', async (req, res) => {
     orderRows.forEach(row => {
       const orderNum = row[0];
       const cost = parseFloat(String(row[4] || '').replace(/[^0-9.]/g, '')) || 0;
-      const gVal = row[6]; // FALSE = לא סופק, TRUE = סופק
+      const gVal = row[6];
       if (orderNum) {
         costByOrderNum[String(orderNum).trim()] = cost;
         if (!isChecked(gVal)) { openOrders++; sumOpen += cost; }
@@ -61,7 +61,7 @@ app.get('/api/dashboard-data', async (req, res) => {
 });
 
 async function uploadImageToDrive(drive, base64Data, fileName, folderId) {
-  const matches = base64Data.match(/^data:(image/w+);base64,(.+)$/);
+  const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
   const { Readable } = require('stream');
   const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId] }, media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) }, fields: 'id, webViewLink' });
