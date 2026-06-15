@@ -44,8 +44,8 @@ function downloadFile(url, dest) {
 
 async function ensureFonts() {
   await Promise.all([
-    downloadFile('https://github.com/googlefonts/alef/raw/main/fonts/ttf/Alef-Regular.ttf', FONT_PATH),
-    downloadFile('https://github.com/googlefonts/alef/raw/main/fonts/ttf/Alef-Bold.ttf', FONT_BOLD_PATH)
+    downloadFile('https://fonts.gstatic.com/s/alef/v21/FeVfS0NQpLYgrjJbC5FxxbU.ttf', FONT_PATH),
+    downloadFile('https://fonts.gstatic.com/s/alef/v21/FeVQS0NQpLYglo50L5la2bxii28.ttf', FONT_BOLD_PATH)
   ]);
 }
 
