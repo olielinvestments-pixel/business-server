@@ -1,6 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
+const PDFDocument = require('pdfkit');
 
 const app = express();
 app.use(express.json({ limit: '15mb' }));
@@ -69,14 +70,77 @@ app.get('/api/dashboard-data', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
-async function uploadImageToDrive(base64Data, fileName) {
+function base64ToBuffer(base64Data) {
   const matches = base64Data.match(/^data:(image\/\w+);base64,(.+)$/);
   if (!matches) throw new Error('Invalid base64 image');
+  return { mimeType: matches[1], buffer: Buffer.from(matches[2], 'base64') };
+}
+
+async function createConfirmationPDF(orderNum, confirmations, photoBase64, signatureBase64, timestamp) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const chunks = [];
+    doc.on('data', chunk => chunks.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const dateStr = new Date(timestamp || Date.now()).toLocaleString('he-IL');
+
+    doc.font('Helvetica-Bold').fontSize(20).text('אישור קבלת מוצר', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.font('Helvetica').fontSize(11).fillColor('#888').text(dateStr, { align: 'center' });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
+    doc.moveDown(0.5);
+
+    doc.fillColor('#000').font('Helvetica-Bold').fontSize(12).text('מספר הזמנה: ', { continued: true });
+    doc.font('Helvetica').text(String(orderNum));
+    doc.moveDown(0.8);
+
+    doc.font('Helvetica-Bold').fontSize(12).text('הצהרות שאושרו:');
+    doc.moveDown(0.3);
+    (confirmations || []).forEach(c => {
+      doc.font('Helvetica').fontSize(11).fillColor('#333').text('✓  ' + c, { indent: 10 });
+      doc.moveDown(0.3);
+    });
+    doc.moveDown(0.5);
+
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
+    doc.moveDown(0.8);
+
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text('תמונת המוצר:');
+    doc.moveDown(0.3);
+    try {
+      const photo = base64ToBuffer(photoBase64);
+      doc.image(photo.buffer, { fit: [495, 280], align: 'center' });
+    } catch(e) { doc.font('Helvetica').fontSize(11).fillColor('#888').text('תמונה לא זמינה'); }
+    doc.moveDown(0.8);
+
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
+    doc.moveDown(0.8);
+
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#000').text('חתימת הלקוח:');
+    doc.moveDown(0.3);
+    try {
+      const sig = base64ToBuffer(signatureBase64);
+      doc.image(sig.buffer, { fit: [495, 120], align: 'center' });
+    } catch(e) { doc.font('Helvetica').fontSize(11).fillColor('#888').text('חתימה לא זמינה'); }
+    doc.moveDown(1);
+
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#ddd').stroke();
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(9).fillColor('#aaa').text('מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', { align: 'center' });
+
+    doc.end();
+  });
+}
+
+async function uploadPDFToDrive(pdfBuffer, fileName) {
   const { Readable } = require('stream');
   const drive = google.drive({ version: 'v3', auth: oauthClient });
   const file = await drive.files.create({
-    requestBody: { name: fileName, parents: [CONFIRMATIONS_FOLDER_ID] },
-    media: { mimeType: matches[1], body: Readable.from(Buffer.from(matches[2], 'base64')) },
+    requestBody: { name: fileName, parents: [CONFIRMATIONS_FOLDER_ID], mimeType: 'application/pdf' },
+    media: { mimeType: 'application/pdf', body: Readable.from(pdfBuffer) },
     fields: 'id, webViewLink'
   });
   await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
@@ -87,7 +151,7 @@ async function ensureSheetExists(sheets, sheetId, sheetName) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   if (!meta.data.sheets.some(s => s.properties.title === sheetName)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:F1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','אישורים','קישור לתמונה','קישור לחתימה','סטאטוס']] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:D1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','קישור לאישור PDF','סטטוס']] } });
   }
 }
 
@@ -97,11 +161,13 @@ app.post('/confirmation', async (req, res) => {
     if (!orderNum || !photo || !signature) return res.status(400).json({ error: 'Missing required fields' });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
-    const photoLink = await uploadImageToDrive(photo, orderNum + '_תמונה.jpg');
-    const signatureLink = await uploadImageToDrive(signature, orderNum + '_חתימה.png');
+
+    const pdfBuffer = await createConfirmationPDF(orderNum, confirmations, photo, signature, timestamp);
+    const pdfLink = await uploadPDFToDrive(pdfBuffer, orderNum + '_אישור_קבלה.pdf');
+
     await ensureSheetExists(sheets, SHEET_ID, CONFIRMATIONS_SHEET_NAME);
-    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:F', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, (confirmations||[]).join(' | '), photoLink, signatureLink, 'נשלח']] } });
-    res.json({ success: true, photoLink, signatureLink });
+    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, pdfLink, 'נשלח']] } });
+    res.json({ success: true, pdfLink });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
