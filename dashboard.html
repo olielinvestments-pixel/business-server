@@ -5,44 +5,151 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>דשבורד עסקי</title>
 <style>
-body { font-family: Arial, sans-serif; background:#f4f5f7; margin:0; padding:20px; }
-h1 { text-align:center; color:#333; }
-.grid { display:grid; grid-template-columns: 1fr 1fr; gap:16px; max-width:700px; margin:20px auto; }
-.card { background:white; border-radius:12px; padding:20px; box-shadow:0 2px 8px rgba(0,0,0,0.1); text-align:center; }
-.card .num { font-size:36px; font-weight:bold; color:#2563eb; }
-.card .label { color:#666; margin-top:8px; font-size:14px; }
-.card.money .num { color:#16a34a; }
-.status { text-align:center; color:#999; margin-top:30px; font-size:13px; }
-.err { color:#dc2626; }
-.refresh-btn { display:block; margin:16px auto 0; padding:8px 24px; background:#2563eb; color:white; border:none; border-radius:8px; font-size:14px; cursor:pointer; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
+.top{background:white;border-bottom:1px solid #e5e7eb;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+.top h1{font-size:18px;font-weight:600;color:#111}
+.refresh-btn{padding:7px 16px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer}
+.refresh-btn:hover{background:#1d4ed8}
+.container{max-width:1200px;margin:0 auto;padding:20px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb}
+.stat-label{font-size:12px;color:#6b7280;margin-bottom:6px}
+.stat-val{font-size:26px;font-weight:700;color:#111}
+.stat-val.blue{color:#2563eb}
+.stat-val.green{color:#16a34a}
+.stat-val.red{color:#dc2626}
+.stat-val.amber{color:#d97706}
+.search-bar{background:white;border-radius:10px;padding:12px 16px;border:1px solid #e5e7eb;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.search-bar input{flex:1;border:none;outline:none;font-size:14px;background:transparent;color:#222}
+.search-bar input::placeholder{color:#9ca3af}
+.tabs{display:flex;gap:4px;margin-bottom:0;background:white;border-radius:10px 10px 0 0;border:1px solid #e5e7eb;border-bottom:none;padding:10px 12px 0}
+.tab{padding:8px 14px;border-radius:8px 8px 0 0;font-size:13px;cursor:pointer;color:#6b7280;border:1px solid transparent;border-bottom:none;position:relative;bottom:-1px}
+.tab.active{background:white;border-color:#e5e7eb;color:#2563eb;font-weight:600;border-bottom:1px solid white}
+.tab .count{display:inline-block;background:#f3f4f6;color:#374151;font-size:11px;padding:1px 6px;border-radius:10px;margin-right:4px}
+.tab.active .count{background:#dbeafe;color:#1d4ed8}
+.table-wrap{background:white;border:1px solid #e5e7eb;border-radius:0 0 10px 10px;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:right;padding:10px 12px;font-size:11px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;background:#f9fafb;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid #f3f4f6;color:#222;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#f9fafb}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
+.badge-open{background:#dbeafe;color:#1d4ed8}
+.badge-done{background:#dcfce7;color:#15803d}
+.badge-urgent{background:#fee2e2;color:#dc2626}
+.badge-service{background:#fef3c7;color:#92400e}
+.badge-service-done{background:#f3f4f6;color:#374151}
+.icon-link{color:#2563eb;font-size:16px;text-decoration:none;margin-left:6px}
+.icon-link:hover{color:#1d4ed8}
+.empty{text-align:center;padding:40px;color:#9ca3af;font-size:14px}
+.updated{font-size:12px;color:#9ca3af;text-align:center;padding:10px}
+.notes-cell{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
-<h1>דשבורד עסקי</h1>
-<div class="grid">
-  <div class="card"><div class="num" id="ordersCount">-</div><div class="label">הזמנות פתוחות (לא סופקו)</div></div>
-  <div class="card money"><div class="num" id="ordersSum">-</div><div class="label">סכום הזמנות פתוחות (&#8362;)</div></div>
-  <div class="card"><div class="num" id="serviceCount">-</div><div class="label">קריאות שירות פתוחות</div></div>
-  <div class="card money"><div class="num" id="serviceSum">-</div><div class="label">סכום קריאות שירות פתוחות (&#8362;)</div></div>
+<div class="top">
+  <h1>דשבורד עסקי</h1>
+  <button class="refresh-btn" onclick="load()">&#8635; רענן</button>
 </div>
-<div class="status" id="status">טוען נתונים...</div>
-<button class="refresh-btn" onclick="load()">רענן</button>
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="stat-label">הזמנות פתוחות</div><div class="stat-val blue" id="s-open">-</div></div>
+    <div class="stat"><div class="stat-label">דחופות</div><div class="stat-val red" id="s-urgent">-</div></div>
+    <div class="stat"><div class="stat-label">שירות פתוח</div><div class="stat-val amber" id="s-service">-</div></div>
+    <div class="stat"><div class="stat-label">סה"כ פתוח (₪)</div><div class="stat-val green" id="s-sum">-</div></div>
+  </div>
+  <div class="search-bar">
+    <svg width="16" height="16" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" id="search" placeholder="חיפוש לפי מספר הזמנה, עיר, הערות..." oninput="render()">
+  </div>
+  <div class="tabs">
+    <div class="tab active" onclick="setTab('all',this)">הכל <span class="count" id="c-all">0</span></div>
+    <div class="tab" onclick="setTab('open',this)">פתוח <span class="count" id="c-open">0</span></div>
+    <div class="tab" onclick="setTab('urgent',this)">דחוף <span class="count" id="c-urgent">0</span></div>
+    <div class="tab" onclick="setTab('done',this)">סופק <span class="count" id="c-done">0</span></div>
+    <div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="count" id="c-service">0</span></div>
+    <div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="count" id="c-service-done">0</span></div>
+  </div>
+  <div class="table-wrap">
+    <table id="main-table">
+      <thead id="thead"></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="updated" id="updated"></div>
+</div>
 <script>
-async function load() {
-  document.getElementById('status').textContent = 'טוען נתונים...';
-  try {
-    const r = await fetch('/api/dashboard-data');
-    if (!r.ok) throw new Error('שגיאת שרת: ' + r.status);
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    document.getElementById('ordersCount').textContent = d.openOrders;
-    document.getElementById('ordersSum').textContent = Number(d.sumOpen).toLocaleString();
-    document.getElementById('serviceCount').textContent = d.openService;
-    document.getElementById('serviceSum').textContent = Number(d.serviceSum).toLocaleString();
-    document.getElementById('status').textContent = 'עודכן: ' + d.updatedAt;
-  } catch(e) {
-    document.getElementById('status').innerHTML = '<span class="err">שגיאה: ' + e.message + '</span>';
+let allData={orders:[],service:[]};
+let currentTab='all';
+function setTab(tab,el){currentTab=tab;document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');render();}
+function isChecked(val){if(val===true)return true;const s=String(val||'').trim().toUpperCase();return s==='TRUE'||s==='V'||s==='YES'||s==='1'||s==='כן';}
+function isUrgent(row){return String(row.orderNum||'').includes('דחוף')||String(row.orderNum||'').toUpperCase().includes('URGENT');}
+function getStatus(row){if(isUrgent(row))return 'urgent';if(isChecked(row.supplied))return 'done';return 'open';}
+function badgeHtml(status){const map={open:['badge-open','פתוח'],done:['badge-done','סופק'],urgent:['badge-urgent','דחוף'],service:['badge-service','שירות פתוח'],'service-done':['badge-service-done','שירות טופל']};const[cls,label]=map[status]||['badge-open',status];return '<span class="badge '+cls+'">'+label+'</span>';}
+function linkHtml(url,icon,title){if(!url||url.trim()==='')return '<span style="color:#d1d5db">—</span>';return '<a href="'+url+'" target="_blank" class="icon-link" title="'+title+'">'+icon+'</a>';}
+function formatDate(val){if(!val||val==='29/01/1900'||val==='17/01/1900')return '—';return val;}
+function formatMoney(val){if(!val)return '—';const n=parseFloat(String(val).replace(/[^0-9.]/g,''));if(isNaN(n))return val;return '₪'+n.toLocaleString();}
+function render(){
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  const isServiceTab=currentTab==='service'||currentTab==='service-done';
+  let rows=[];
+  if(isServiceTab){
+    rows=allData.service.filter(r=>{
+      const fixed=isChecked(r.fixed);
+      if(currentTab==='service'&&fixed)return false;
+      if(currentTab==='service-done'&&!fixed)return false;
+      if(q){const h=[r.orderNum,r.requestDate,r.fixDate,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+      return true;
+    });
+  } else {
+    rows=allData.orders.filter(r=>{
+      const status=getStatus(r);
+      if(currentTab==='open'&&status!=='open')return false;
+      if(currentTab==='urgent'&&status!=='urgent')return false;
+      if(currentTab==='done'&&status!=='done')return false;
+      if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+      return true;
+    });
   }
+  const thead=document.getElementById('thead');
+  const tbody=document.getElementById('tbody');
+  if(isServiceTab){
+    thead.innerHTML='<tr><th>מספר הזמנה</th><th>תאריך בקשה</th><th>תאריך טיפול</th><th>סטטוס</th><th>הערות</th></tr>';
+    tbody.innerHTML=rows.length===0?'<tr><td colspan="5" class="empty">אין רשומות</td></tr>':rows.map(r=>'<tr><td>'+r.orderNum+'</td><td>'+formatDate(r.requestDate)+'</td><td>'+formatDate(r.fixDate)+'</td><td>'+badgeHtml(isChecked(r.fixed)?'service-done':'service')+'</td><td class="notes-cell" title="'+(r.notes||'')+'">'+(r.notes||'—')+'</td></tr>').join('');
+  } else {
+    thead.innerHTML='<tr><th>מספר הזמנה</th><th>תאריך הזמנה</th><th>עיר</th><th>עלות</th><th>מועד אספקה</th><th>אספקה מיידית</th><th>סטטוס</th><th>הערות</th><th>חשבונית</th><th>אישור קבלה</th></tr>';
+    tbody.innerHTML=rows.length===0?'<tr><td colspan="10" class="empty">אין רשומות</td></tr>':rows.map(r=>'<tr><td><strong>'+(r.orderNum||'—')+'</strong></td><td>'+formatDate(r.orderDate)+'</td><td>'+(r.city||'—')+'</td><td>'+formatMoney(r.cost)+'</td><td>'+formatDate(r.deliveryDate)+'</td><td>'+(isChecked(r.immediate)?'✓':'—')+'</td><td>'+badgeHtml(getStatus(r))+'</td><td class="notes-cell" title="'+(r.notes||'')+'">'+(r.notes||'—')+'</td><td>'+linkHtml(r.invoiceLink,'📄','חשבונית')+'</td><td>'+linkHtml(r.confirmationLink,'✍️','אישור קבלה')+'</td></tr>').join('');
+  }
+  updateCounts();
+}
+function updateCounts(){
+  const orders=allData.orders;const service=allData.service;
+  const q=document.getElementById('search').value.trim().toLowerCase();
+  const fo=fn=>orders.filter(r=>{if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}return fn(r);});
+  document.getElementById('c-all').textContent=orders.length+service.length;
+  document.getElementById('c-open').textContent=fo(r=>getStatus(r)==='open').length;
+  document.getElementById('c-urgent').textContent=fo(r=>getStatus(r)==='urgent').length;
+  document.getElementById('c-done').textContent=fo(r=>getStatus(r)==='done').length;
+  document.getElementById('c-service').textContent=service.filter(r=>!isChecked(r.fixed)).length;
+  document.getElementById('c-service-done').textContent=service.filter(r=>isChecked(r.fixed)).length;
+  const open=orders.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
+  document.getElementById('s-open').textContent=open.length;
+  document.getElementById('s-urgent').textContent=orders.filter(r=>getStatus(r)==='urgent').length;
+  document.getElementById('s-service').textContent=service.filter(r=>!isChecked(r.fixed)).length;
+  const total=open.reduce((s,r)=>s+(parseFloat(String(r.cost||'').replace(/[^0-9.]/g,''))||0),0);
+  document.getElementById('s-sum').textContent='₪'+Math.round(total).toLocaleString();
+}
+async function load(){
+  document.getElementById('updated').textContent='טוען...';
+  try{
+    const r=await fetch('/api/crm-data');
+    if(!r.ok)throw new Error('שגיאת שרת '+r.status);
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    allData=d;render();
+    document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
+  }catch(e){document.getElementById('updated').textContent='שגיאה: '+e.message;}
 }
 load();
 </script>
