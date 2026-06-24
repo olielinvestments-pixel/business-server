@@ -5,27 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>אישור קבלת מוצר</title>
 <style>
-  body { font-family: Arial, sans-serif; background:#f4f5f7; margin:0; padding:16px; }
-  .box { background:white; border-radius:12px; padding:16px; max-width:480px; margin:0 auto; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
-  h2 { text-align:center; color:#333; }
-  label { display:block; margin-top:14px; font-weight:bold; color:#444; }
-  input[type=text], input[type=number] { width:100%; padding:10px; margin-top:6px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box; font-size:16px; }
-  .checks label { display:flex; align-items:flex-start; gap:8px; font-weight:normal; margin-top:10px; line-height:1.5; }
-  .checks input { width:auto; margin-top:3px; flex-shrink:0; }
-  .action-btn { width:100%; padding:14px; background:#f0f4ff; border:2px solid #2563eb; color:#2563eb; border-radius:10px; font-size:16px; margin-top:8px; font-weight:bold; }
-  .action-btn.done { background:#ecfdf5; border-color:#16a34a; color:#16a34a; }
-  #preview { max-width:100%; margin-top:8px; border-radius:8px; display:none; }
-  .modal { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index:100; }
-  .modal.open { display:flex; }
-  .modal-content { background:white; border-radius:12px; padding:16px; width:92%; max-width:480px; }
-  #sigCanvas { border:1px solid #ccc; border-radius:8px; width:100%; height:220px; touch-action:none; background:#fff; }
-  .modal-actions { display:flex; gap:10px; margin-top:12px; }
-  .modal-actions button { flex:1; padding:12px; border-radius:8px; border:none; font-size:16px; }
-  .btn-clear { background:#eee; }
-  .btn-save { background:#2563eb; color:white; }
-  .submit-btn { width:100%; padding:14px; background:#2563eb; color:white; border:none; border-radius:10px; font-size:18px; margin-top:20px; }
-  .submit-btn:disabled { background:#999; }
-  #status { text-align:center; margin-top:12px; font-weight:bold; }
+body { font-family: Arial, sans-serif; background:#f4f5f7; margin:0; padding:16px; }
+.box { background:white; border-radius:12px; padding:16px; max-width:480px; margin:0 auto; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+h2 { text-align:center; color:#333; }
+label { display:block; margin-top:14px; font-weight:bold; color:#444; }
+input[type=text] { width:100%; padding:10px; margin-top:6px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box; font-size:16px; }
+.checks label { display:flex; align-items:flex-start; gap:8px; font-weight:normal; margin-top:10px; line-height:1.5; }
+.checks input { width:auto; margin-top:3px; flex-shrink:0; width:20px; height:20px; }
+.action-btn { width:100%; padding:14px; background:#f0f4ff; border:2px solid #2563eb; color:#2563eb; border-radius:10px; font-size:16px; margin-top:8px; font-weight:bold; cursor:pointer; }
+.action-btn.done { background:#ecfdf5; border-color:#16a34a; color:#16a34a; }
+.action-btn:disabled { background:#f5f5f5; border-color:#ccc; color:#999; cursor:not-allowed; }
+.modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); display:none; align-items:center; justify-content:center; z-index:100; }
+.modal-overlay.open { display:flex; }
+.modal-content { background:white; border-radius:12px; padding:16px; width:92%; max-width:480px; }
+#sigCanvas { border:1px solid #ccc; border-radius:8px; width:100%; height:220px; touch-action:none; background:#fff; }
+.modal-actions { display:flex; gap:10px; margin-top:12px; }
+.modal-actions button { flex:1; padding:12px; border-radius:8px; border:none; font-size:16px; cursor:pointer; }
+.btn-clear { background:#eee; }
+.btn-save { background:#2563eb; color:white; }
+.submit-btn { width:100%; padding:14px; background:#2563eb; color:white; border:none; border-radius:10px; font-size:18px; margin-top:20px; cursor:pointer; }
+.submit-btn:disabled { background:#999; cursor:not-allowed; }
+#status { text-align:center; margin-top:12px; font-weight:bold; }
+.duplicate-warning { display:none; background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:12px; margin-top:8px; color:#b91c1c; font-size:14px; line-height:1.5; }
+.duplicate-warning.show { display:flex; align-items:flex-start; gap:8px; }
+.photos-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+.photo-thumb { aspect-ratio:1; border-radius:8px; object-fit:cover; width:100%; display:block; }
+.photo-add-btn { aspect-ratio:1; border-radius:8px; border:2px dashed #ccc; background:#f9fafb; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; cursor:pointer; color:#888; font-size:12px; width:100%; }
+.photo-add-btn:disabled { opacity:0.4; cursor:not-allowed; }
+.photos-count { font-size:12px; color:#666; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -33,7 +40,11 @@
   <h2>אישור קבלת מוצר</h2>
 
   <label>מספר הזמנה</label>
-  <input type="text" id="orderNum" placeholder="הזן מספר הזמנה" required>
+  <input type="text" id="orderNum" placeholder="הזן מספר הזמנה" autocomplete="off">
+  <div class="duplicate-warning" id="duplicateWarning">
+    <span style="font-size:18px;flex-shrink:0;">⚠️</span>
+    <span id="duplicateMsg"></span>
+  </div>
 
   <label>אישור קבלה</label>
   <div style="background:#f9fafb; border:1px solid #eee; border-radius:8px; padding:12px; font-size:14px; line-height:1.6; color:#444;">
@@ -41,21 +52,20 @@
     בחתימתי מטה אני מאשר/ת את קבלת המוצר/ים ואת שביעות רצוני ממצבם בעת המסירה.
   </div>
   <div class="checks">
-    <label><input type="checkbox" required> קראתי ואני מאשר/ת את האמור לעיל</label>
-    <label><input type="checkbox" required> ידוע לי כי יתרת התשלום בגין המוצר משולמת ישירות לספק, וכי באחריותי לקבל מהספק אסמכתא עבור התשלום</label>
+    <label><input type="checkbox" id="check1"> קראתי ואני מאשר/ת את האמור לעיל</label>
+    <label><input type="checkbox" id="check2"> ידוע לי כי יתרת התשלום בגין המוצר משולמת ישירות לספק, וכי באחריותי לקבל מהספק אסמכתא עבור התשלום</label>
   </div>
 
-  <label>צילום המוצר בבית הלקוח</label>
-  <button type="button" class="action-btn" id="photoBtn" onclick="document.getElementById('photoInput').click()" disabled>📷 צלם תמונה</button>
-  <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none">
-  <img id="preview">
+  <label>צילום המוצר בבית הלקוח <span style="font-weight:normal;color:#666;font-size:13px;">(עד 5 תמונות)</span></label>
+  <div class="photos-grid" id="photosGrid"></div>
+  <div class="photos-count" id="photosCount">0 מתוך 5 תמונות</div>
+  <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" multiple>
 
   <label>חתימת הלקוח</label>
   <button type="button" class="action-btn" id="sigBtn" onclick="openSigModal()" disabled>✍️ הקלד חתימה</button>
 </div>
 
-<!-- Signature Modal -->
-<div class="modal" id="sigModal">
+<div class="modal-overlay" id="sigModal">
   <div class="modal-content">
     <h3 style="text-align:center; margin-top:0;">חתימת לקוח</h3>
     <canvas id="sigCanvas"></canvas>
@@ -73,157 +83,155 @@
 
 <script>
 const ENDPOINT_URL = "/confirmation";
+const MAX_PHOTOS = 5;
+let photoFiles = [];
+let sigDataUrl = null;
+let duplicateChecked = false;
 
-// --- Gating: require order number + confirmations before photo/signature ---
 function checkGate() {
   const orderNum = document.getElementById('orderNum').value.trim();
-  const checks = document.querySelectorAll('.checks input[type=checkbox]');
-  const allChecked = [...checks].every(c => c.checked);
-  const ready = orderNum && allChecked;
-  document.getElementById('photoBtn').disabled = !ready;
-  document.getElementById('sigBtn').disabled = !ready;
+  const check1 = document.getElementById('check1').checked;
+  const check2 = document.getElementById('check2').checked;
+  const ready = orderNum && check1 && check2 && !duplicateChecked;
+  updatePhotoGrid();
+  document.getElementById('sigBtn').disabled = !ready || photoFiles.length === 0;
 }
-document.getElementById('orderNum').addEventListener('input', checkGate);
-document.querySelectorAll('.checks input[type=checkbox]').forEach(c => c.addEventListener('change', checkGate));
 
-// --- Signature pad (modal) ---
+document.getElementById('orderNum').addEventListener('input', function() {
+  duplicateChecked = false;
+  document.getElementById('duplicateWarning').classList.remove('show');
+  checkGate();
+});
+document.getElementById('check1').addEventListener('change', checkGate);
+document.getElementById('check2').addEventListener('change', checkGate);
+
+let dupCheckTimeout = null;
+document.getElementById('orderNum').addEventListener('input', function() {
+  clearTimeout(dupCheckTimeout);
+  const val = this.value.trim();
+  if (!val) return;
+  dupCheckTimeout = setTimeout(() => checkDuplicate(val), 600);
+});
+
+async function checkDuplicate(orderNum) {
+  try {
+    const res = await fetch('/api/check-duplicate?orderNum=' + encodeURIComponent(orderNum));
+    const data = await res.json();
+    if (data.isDuplicate) {
+      duplicateChecked = true;
+      document.getElementById('duplicateMsg').textContent = 'הזמנה ' + orderNum + ' כבר דווחה כסופקת — בדוק שהמספר נכון לפני שממשיכים';
+      document.getElementById('duplicateWarning').classList.add('show');
+    } else {
+      duplicateChecked = false;
+      document.getElementById('duplicateWarning').classList.remove('show');
+    }
+    checkGate();
+  } catch(e) {}
+}
+
+function updatePhotoGrid() {
+  const orderNum = document.getElementById('orderNum').value.trim();
+  const check1 = document.getElementById('check1').checked;
+  const check2 = document.getElementById('check2').checked;
+  const gateOpen = orderNum && check1 && check2 && !duplicateChecked;
+  const grid = document.getElementById('photosGrid');
+  grid.innerHTML = '';
+  photoFiles.forEach((file, i) => {
+    const url = URL.createObjectURL(file);
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:relative;aspect-ratio:1;';
+    const img = document.createElement('img');
+    img.src = url; img.className = 'photo-thumb';
+    const del = document.createElement('button');
+    del.textContent = '✕';
+    del.style.cssText = 'position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.55);color:white;border:none;border-radius:50%;width:22px;height:22px;font-size:12px;cursor:pointer;line-height:1;';
+    del.onclick = () => { photoFiles.splice(i, 1); updatePhotoGrid(); checkGate(); };
+    wrapper.appendChild(img); wrapper.appendChild(del); grid.appendChild(wrapper);
+  });
+  if (photoFiles.length < MAX_PHOTOS) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'photo-add-btn';
+    addBtn.disabled = !gateOpen;
+    addBtn.innerHTML = '<span style="font-size:22px;">📷</span><span>' + (photoFiles.length === 0 ? 'צלם תמונה' : 'הוסף תמונה') + '</span>';
+    addBtn.onclick = () => document.getElementById('photoInput').click();
+    grid.appendChild(addBtn);
+  }
+  document.getElementById('photosCount').textContent = photoFiles.length + ' מתוך ' + MAX_PHOTOS + ' תמונות';
+  document.getElementById('sigBtn').disabled = !(gateOpen && photoFiles.length > 0);
+}
+
+document.getElementById('photoInput').addEventListener('change', function(e) {
+  const files = [...e.target.files];
+  for (const file of files) { if (photoFiles.length < MAX_PHOTOS) photoFiles.push(file); }
+  this.value = '';
+  updatePhotoGrid();
+});
+
 const canvas = document.getElementById('sigCanvas');
 const ctx = canvas.getContext('2d');
-let sigDataUrl = null;
 
-function openSigModal() {
-  document.getElementById('sigModal').classList.add('open');
-  setTimeout(resizeCanvas, 50); // wait for layout
-}
-function closeSigModal() {
-  document.getElementById('sigModal').classList.remove('open');
-}
+function openSigModal() { document.getElementById('sigModal').classList.add('open'); setTimeout(resizeCanvas, 50); }
+function closeSigModal() { document.getElementById('sigModal').classList.remove('open'); }
 function resizeCanvas() {
   const ratio = window.devicePixelRatio || 1;
-  canvas.width = canvas.offsetWidth * ratio;
-  canvas.height = canvas.offsetHeight * ratio;
-  ctx.scale(ratio, ratio);
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
+  canvas.width = canvas.offsetWidth * ratio; canvas.height = canvas.offsetHeight * ratio;
+  ctx.scale(ratio, ratio); ctx.lineWidth = 2; ctx.lineCap = 'round';
 }
 
 let drawing = false;
-function pos(e) {
-  const rect = canvas.getBoundingClientRect();
-  const t = e.touches ? e.touches[0] : e;
-  return { x: t.clientX - rect.left, y: t.clientY - rect.top };
-}
+function pos(e) { const rect = canvas.getBoundingClientRect(); const t = e.touches ? e.touches[0] : e; return { x: t.clientX - rect.left, y: t.clientY - rect.top }; }
 function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); }
 function move(e) { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }
 function end() { drawing = false; }
-canvas.addEventListener('mousedown', start);
-canvas.addEventListener('mousemove', move);
-canvas.addEventListener('mouseup', end);
-canvas.addEventListener('touchstart', start);
-canvas.addEventListener('touchmove', move);
-canvas.addEventListener('touchend', end);
-
-function clearSig() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
+canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', end);
+canvas.addEventListener('touchstart', start); canvas.addEventListener('touchmove', move); canvas.addEventListener('touchend', end);
+function clearSig() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
 function saveSig() {
-  const blank = document.createElement('canvas');
-  blank.width = canvas.width; blank.height = canvas.height;
-  if (canvas.toDataURL() === blank.toDataURL()) {
-    alert('יש לחתום לפני השמירה');
-    return;
-  }
+  const blank = document.createElement('canvas'); blank.width = canvas.width; blank.height = canvas.height;
+  if (canvas.toDataURL() === blank.toDataURL()) { alert('יש לחתום לפני השמירה'); return; }
   sigDataUrl = canvas.toDataURL('image/png');
   const btn = document.getElementById('sigBtn');
-  btn.textContent = '✅ חתימה נשמרה (לחץ לעריכה)';
-  btn.classList.add('done');
-  closeSigModal();
+  btn.textContent = '✅ חתימה נשמרה (לחץ לעריכה)'; btn.classList.add('done'); closeSigModal();
 }
 
-// --- Photo ---
-let photoFile = null;
-document.getElementById('photoInput').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  if (file) {
-    photoFile = file;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const img = document.getElementById('preview');
-      img.src = ev.target.result;
-      img.style.display = 'block';
-    };
-    reader.readAsDataURL(file);
-    const btn = document.getElementById('photoBtn');
-    btn.textContent = '✅ תמונה צולמה (לחץ לצילום חדש)';
-    btn.classList.add('done');
-  }
-});
-
-// --- Submit ---
 function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
 }
 
 async function submitForm() {
   const orderNum = document.getElementById('orderNum').value.trim();
-  const checks = document.querySelectorAll('.checks input[type=checkbox]');
+  const check1 = document.getElementById('check1').checked;
+  const check2 = document.getElementById('check2').checked;
   const status = document.getElementById('status');
   const btn = document.getElementById('submitBtn');
-
   if (!orderNum) { status.textContent = 'יש להזין מספר הזמנה'; status.style.color = 'red'; return; }
-  for (const c of checks) {
-    if (!c.checked) { status.textContent = 'יש לאשר את כל ההצהרות'; status.style.color = 'red'; return; }
-  }
-  if (!photoFile) { status.textContent = 'יש לצלם תמונה של המוצר'; status.style.color = 'red'; return; }
+  if (!check1 || !check2) { status.textContent = 'יש לאשר את כל ההצהרות'; status.style.color = 'red'; return; }
+  if (photoFiles.length === 0) { status.textContent = 'יש לצלם לפחות תמונה אחת של המוצר'; status.style.color = 'red'; return; }
   if (!sigDataUrl) { status.textContent = 'יש לקבל חתימת לקוח'; status.style.color = 'red'; return; }
-
-  btn.disabled = true;
-  status.style.color = '#333';
-  status.textContent = 'שולח...';
-
+  if (duplicateChecked) { status.textContent = 'יש לתקן את מספר ההזמנה לפני שליחה'; status.style.color = 'red'; return; }
+  btn.disabled = true; status.style.color = '#333'; status.textContent = 'שולח...';
   try {
-    const photoBase64 = await fileToBase64(photoFile);
-
+    const photosBase64 = await Promise.all(photoFiles.map(f => fileToBase64(f)));
     const res = await fetch(ENDPOINT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderNum,
-        confirmations: [...checks].map(c => c.parentElement.textContent.trim()),
-        photo: photoBase64,
-        signature: sigDataUrl,
-        timestamp: new Date().toISOString()
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderNum, confirmations: [document.getElementById('check1').parentElement.textContent.trim(), document.getElementById('check2').parentElement.textContent.trim()], photos: photosBase64, signature: sigDataUrl, timestamp: new Date().toISOString() })
     });
-
     const data = await res.json();
     if (res.ok && data.success) {
-      status.style.color = 'green';
-      status.innerHTML = '✅ האישור נשלח בהצלחה!';
+      status.style.color = 'green'; status.innerHTML = '✅ האישור נשלח בהצלחה!';
       if (data.pdfLink) {
         const waBtn = document.createElement('a');
         waBtn.href = 'https://wa.me/?text=' + encodeURIComponent('אישור קבלת מוצר מספר הזמנה: ' + orderNum + '\n' + data.pdfLink);
         waBtn.target = '_blank';
         waBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:#25D366;color:white;border:none;border-radius:10px;font-size:16px;font-weight:bold;margin-top:12px;text-decoration:none;box-sizing:border-box;';
         waBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> שתף ב-WhatsApp';
-        status.appendChild(document.createElement('br'));
-        status.appendChild(waBtn);
+        status.appendChild(document.createElement('br')); status.appendChild(waBtn);
       }
-    } else {
-      throw new Error(data.error || 'שגיאת שרת');
-    }
-  } catch (err) {
-    status.style.color = 'red';
-    status.textContent = '❌ שגיאה בשליחה: ' + err.message;
-    btn.disabled = false;
-  }
+    } else { throw new Error(data.error || 'שגיאת שרת'); }
+  } catch (err) { status.style.color = 'red'; status.textContent = '❌ שגיאה בשליחה: ' + err.message; btn.disabled = false; }
 }
+
+updatePhotoGrid();
 </script>
 </body>
 </html>
