@@ -1,6 +1,7 @@
 const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
+const https = require('https');
 const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, BorderStyle } = require('docx');
 
 const app = express();
@@ -23,9 +24,185 @@ const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'איש
 const ORDERS_SHEET_NAME = process.env.ORDERS_SHEET_NAME || 'מעקב הזמנות';
 const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
 
+const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
+const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
+const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
+let ZOHO_REFRESH_TOKEN = process.env.ZOHO_REFRESH_TOKEN || '';
+let zohoAccessToken = '';
+let zohoTokenExpiry = 0;
+
 app.get('/', (req, res) => res.send('Server is running ✅'));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/confirmation-form', (req, res) => res.sendFile(path.join(__dirname, 'confirmation-form.html')));
+
+// ── Zoho OAuth callback (one-time setup) ──────────────────────────────────────
+app.get('/zoho-callback', async (req, res) => {
+  const code = req.query.code;
+  if (!code) return res.send('No code received');
+  try {
+    const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
+      code,
+      client_id: ZOHO_CLIENT_ID,
+      client_secret: ZOHO_CLIENT_SECRET,
+      redirect_uri: 'https://paypal-webhook-81m2.onrender.com/zoho-callback',
+      grant_type: 'authorization_code'
+    }).toString());
+    ZOHO_REFRESH_TOKEN = result.refresh_token;
+    res.send(`
+      <h2>✅ Zoho connected!</h2>
+      <p>Refresh Token:</p>
+      <code style="word-break:break-all">${result.refresh_token}</code>
+      <p>Copy this token and add it to Render as <strong>ZOHO_REFRESH_TOKEN</strong></p>
+    `);
+  } catch (err) {
+    res.send('Error: ' + err.message);
+  }
+});
+
+// ── Zoho helpers ──────────────────────────────────────────────────────────────
+function zohoPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const options = {
+      hostname: urlObj.hostname,
+      path: urlObj.pathname,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
+    };
+    const req = https.request(options, r => {
+      let data = '';
+      r.on('data', d => data += d);
+      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function getZohoAccessToken() {
+  if (zohoAccessToken && Date.now() < zohoTokenExpiry - 60000) return zohoAccessToken;
+  const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
+    refresh_token: ZOHO_REFRESH_TOKEN,
+    client_id: ZOHO_CLIENT_ID,
+    client_secret: ZOHO_CLIENT_SECRET,
+    grant_type: 'refresh_token'
+  }).toString());
+  if (!result.access_token) throw new Error('Failed to get Zoho token: ' + JSON.stringify(result));
+  zohoAccessToken = result.access_token;
+  zohoTokenExpiry = Date.now() + (result.expires_in || 3600) * 1000;
+  return zohoAccessToken;
+}
+
+async function zohoApiPost(path, body) {
+  const token = await getZohoAccessToken();
+  const bodyStr = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'invoice.zoho.com',
+      path: '/api/v3' + path,
+      method: 'POST',
+      headers: {
+        'Authorization': 'Zoho-oauthtoken ' + token,
+        'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID,
+        'Content-Type': 'application/json;charset=UTF-8',
+        'Content-Length': Buffer.byteLength(bodyStr)
+      }
+    };
+    const req = https.request(options, r => {
+      let data = '';
+      r.on('data', d => data += d);
+      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
+    });
+    req.on('error', reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+async function zohoApiGet(path) {
+  const token = await getZohoAccessToken();
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'invoice.zoho.com',
+      path: '/api/v3' + path,
+      method: 'GET',
+      headers: {
+        'Authorization': 'Zoho-oauthtoken ' + token,
+        'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID
+      }
+    };
+    const req = https.request(options, r => {
+      let data = '';
+      r.on('data', d => data += d);
+      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function getOrCreateZohoContact(name) {
+  // Search for existing contact
+  const search = await zohoApiGet('/contacts?contact_name=' + encodeURIComponent(name));
+  if (search.contacts && search.contacts.length > 0) return search.contacts[0].contact_id;
+  // Create new contact
+  const result = await zohoApiPost('/contacts', { contact_name: name, contact_type: 'customer' });
+  if (result.contact) return result.contact.contact_id;
+  throw new Error('Failed to create contact: ' + JSON.stringify(result));
+}
+
+async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD) {
+  const contactId = await getOrCreateZohoContact(customerName);
+  const result = await zohoApiPost('/invoices', {
+    customer_id: contactId,
+    reference_number: String(orderNum),
+    status: 'draft',
+    line_items: [{
+      name: itemName || 'מוצר',
+      quantity: 1,
+      rate: parseFloat(amountUSD) || 0
+    }]
+  });
+  if (result.invoice) return result.invoice;
+  throw new Error('Failed to create invoice: ' + JSON.stringify(result));
+}
+
+// ── PayPal Webhook ─────────────────────────────────────────────────────────────
+app.post('/webhook', async (req, res) => {
+  try {
+    const event = req.body;
+    const eventType = event.event_type || '';
+    if (!eventType.includes('PAYMENT') && !eventType.includes('SALE') && !eventType.includes('CAPTURE')) {
+      return res.json({ received: true });
+    }
+
+    const resource = event.resource || {};
+    const amountILS = parseFloat((resource.amount && resource.amount.total) || resource.gross_amount && resource.gross_amount.value || 0);
+    const amountUSD = parseFloat((resource.seller_receivable_breakdown && resource.seller_receivable_breakdown.net_amount && resource.seller_receivable_breakdown.net_amount.value) || 0);
+    const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) ||
+                         (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
+    const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
+    const itemName = (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].items && resource.purchase_units[0].items[0] && resource.purchase_units[0].items[0].name) || 'מוצר';
+
+    console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
+
+    // Create Zoho Draft Invoice if refresh token is set
+    if (ZOHO_REFRESH_TOKEN && orderNum) {
+      try {
+        const invoice = await createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD);
+        console.log('✅ Zoho draft invoice created:', invoice.invoice_number);
+      } catch (zohoErr) {
+        console.error('Zoho error (non-fatal):', zohoErr.message);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Webhook error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 function isChecked(val) {
   if (val === true) return true;
