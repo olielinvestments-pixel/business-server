@@ -33,6 +33,43 @@ function isChecked(val) {
   return s === 'TRUE' || s === 'V' || s === 'YES' || s === '1' || s === 'כן';
 }
 
+app.get('/api/crm-data', async (req, res) => {
+  try {
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const [ordersResp, serviceResp] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:E' })
+    ]);
+    const orderRows = (ordersResp.data.values || []).slice(1);
+    const serviceRows = (serviceResp.data.values || []).slice(1);
+    const orders = orderRows
+      .filter(r => r[0] && String(r[0]).trim())
+      .map(r => ({
+        orderNum: r[0] || '',
+        orderDate: r[1] || '',
+        invoiceLink: r[2] || '',
+        city: r[3] || '',
+        cost: r[4] || '',
+        immediate: r[5] || '',
+        supplied: r[6] || '',
+        deliveryDate: r[7] || '',
+        notes: r[8] || '',
+        confirmationLink: r[9] || ''
+      }));
+    const service = serviceRows
+      .filter(r => r[0] && String(r[0]).trim())
+      .map(r => ({
+        orderNum: r[0] || '',
+        requestDate: r[1] || '',
+        fixed: r[2] || '',
+        fixDate: r[3] || '',
+        notes: r[4] || ''
+      }));
+    res.json({ orders, service });
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/check-duplicate', async (req, res) => {
   try {
     const orderNum = String(req.query.orderNum || '').trim();
@@ -44,15 +81,6 @@ app.get('/api/check-duplicate', async (req, res) => {
     const exists = rows.some(row => String(row[0] || '').trim() === orderNum);
     res.json({ isDuplicate: exists });
   } catch (err) { console.error('check-duplicate error:', err); res.json({ isDuplicate: false }); }
-});
-
-app.get('/api/debug-rows', async (req, res) => {
-  try {
-    const client = await serviceAuth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' });
-    res.json({ orderSheetName: ORDERS_SHEET_NAME, rows: (resp.data.values || []).slice(0, 5) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/api/dashboard-data', async (req, res) => {
@@ -150,12 +178,7 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
       if (String(rows[i][0] || '').trim() === String(orderNum).trim()) { targetRow = i + 1; break; }
     }
     if (targetRow === -1) { console.log('Order not found:', orderNum); return; }
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: ORDERS_SHEET_NAME + '!J' + targetRow,
-      valueInputOption: 'RAW',
-      requestBody: { values: [[docLink]] }
-    });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!J' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[docLink]] } });
   } catch (err) { console.error('Failed to write link:', err.message); }
 }
 
