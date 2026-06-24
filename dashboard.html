@@ -7,44 +7,51 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
-.top{background:white;border-bottom:1px solid #e5e7eb;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
-.top h1{font-size:18px;font-weight:600;color:#111}
-.refresh-btn{padding:7px 16px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer}
-.refresh-btn:hover{background:#1d4ed8}
-.container{max-width:1200px;margin:0 auto;padding:20px}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
-.stat{background:white;border-radius:10px;padding:16px;border:1px solid #e5e7eb}
-.stat-label{font-size:12px;color:#6b7280;margin-bottom:6px}
-.stat-val{font-size:26px;font-weight:700;color:#111}
-.stat-val.blue{color:#2563eb}
-.stat-val.green{color:#16a34a}
+.top{background:white;border-bottom:1px solid #e5e7eb;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.top h1{font-size:17px;font-weight:600;color:#111}
+.refresh-btn{padding:6px 14px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px}
+.container{padding:12px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.stat{background:white;border-radius:10px;padding:12px 14px;border:1px solid #e5e7eb}
+.stat-label{font-size:11px;color:#6b7280;margin-bottom:4px}
+.stat-val{font-size:22px;font-weight:700}
+.stat-val.blue{color:#1d4ed8}
 .stat-val.red{color:#dc2626}
 .stat-val.amber{color:#d97706}
-.search-bar{background:white;border-radius:10px;padding:12px 16px;border:1px solid #e5e7eb;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+.stat-val.green{color:#16a34a}
+.search-bar{background:white;border-radius:10px;padding:10px 14px;border:1px solid #e5e7eb;margin-bottom:10px;display:flex;align-items:center;gap:8px}
 .search-bar input{flex:1;border:none;outline:none;font-size:14px;background:transparent;color:#222}
 .search-bar input::placeholder{color:#9ca3af}
-.tabs{display:flex;gap:4px;margin-bottom:0;background:white;border-radius:10px 10px 0 0;border:1px solid #e5e7eb;border-bottom:none;padding:10px 12px 0}
-.tab{padding:8px 14px;border-radius:8px 8px 0 0;font-size:13px;cursor:pointer;color:#6b7280;border:1px solid transparent;border-bottom:none;position:relative;bottom:-1px}
-.tab.active{background:white;border-color:#e5e7eb;color:#2563eb;font-weight:600;border-bottom:1px solid white}
-.tab .count{display:inline-block;background:#f3f4f6;color:#374151;font-size:11px;padding:1px 6px;border-radius:10px;margin-right:4px}
-.tab.active .count{background:#dbeafe;color:#1d4ed8}
-.table-wrap{background:white;border:1px solid #e5e7eb;border-radius:0 0 10px 10px;overflow:auto}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:right;padding:10px 12px;font-size:11px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;background:#f9fafb;white-space:nowrap}
-td{padding:10px 12px;border-bottom:1px solid #f3f4f6;color:#222;white-space:nowrap}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:#f9fafb}
-.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:500}
-.badge-open{background:#dbeafe;color:#1d4ed8}
-.badge-done{background:#dcfce7;color:#15803d}
-.badge-urgent{background:#fee2e2;color:#dc2626}
-.badge-service{background:#fef3c7;color:#92400e}
-.badge-service-done{background:#f3f4f6;color:#374151}
-.icon-link{color:#2563eb;font-size:16px;text-decoration:none;margin-left:6px}
-.icon-link:hover{color:#1d4ed8}
-.empty{text-align:center;padding:40px;color:#9ca3af;font-size:14px}
-.updated{font-size:12px;color:#9ca3af;text-align:center;padding:10px}
-.notes-cell{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tabs{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{font-size:12px;padding:6px 12px;border-radius:20px;white-space:nowrap;border:1px solid #e5e7eb;color:#6b7280;background:white;cursor:pointer;flex-shrink:0}
+.tab.active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:600}
+.tab .cnt{font-size:11px;background:#f3f4f6;padding:1px 5px;border-radius:10px;margin-right:3px}
+.tab.active .cnt{background:#bfdbfe;color:#1e40af}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px}
+.card.urgent{border-color:#fca5a5;border-width:1.5px}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.card-num{font-size:15px;font-weight:600;color:#111}
+.badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500}
+.b-open{background:#dbeafe;color:#1d4ed8}
+.b-done{background:#dcfce7;color:#15803d}
+.b-urgent{background:#fee2e2;color:#dc2626}
+.b-service{background:#fef3c7;color:#92400e}
+.b-sdone{background:#f3f4f6;color:#374151}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:10px}
+.field-label{font-size:11px;color:#6b7280;margin-bottom:2px}
+.field-val{font-size:13px;color:#111;font-weight:500}
+.card-footer{display:flex;gap:8px;padding-top:10px;border-top:1px solid #f3f4f6;flex-wrap:wrap}
+.link-btn{font-size:12px;color:#1d4ed8;display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;text-decoration:none;white-space:nowrap}
+.link-btn.no-link{color:#9ca3af;border-color:#e5e7eb;background:#f9fafb;cursor:default}
+.notes-badge{font-size:11px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px}
+.updated{font-size:11px;color:#9ca3af;text-align:center;padding:8px}
+@media(min-width:640px){
+  .stats{grid-template-columns:repeat(4,1fr)}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr)}
+}
 </style>
 </head>
 <body>
@@ -59,87 +66,172 @@ tr:hover td{background:#f9fafb}
     <div class="stat"><div class="stat-label">שירות פתוח</div><div class="stat-val amber" id="s-service">-</div></div>
     <div class="stat"><div class="stat-label">סה"כ פתוח (₪)</div><div class="stat-val green" id="s-sum">-</div></div>
   </div>
+
   <div class="search-bar">
-    <svg width="16" height="16" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-    <input type="text" id="search" placeholder="חיפוש לפי מספר הזמנה, עיר, הערות..." oninput="render()">
+    <svg width="15" height="15" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="text" id="search" placeholder="חיפוש לפי מספר הזמנה, עיר..." oninput="render()">
   </div>
+
   <div class="tabs">
-    <div class="tab active" onclick="setTab('all',this)">הכל <span class="count" id="c-all">0</span></div>
-    <div class="tab" onclick="setTab('open',this)">פתוח <span class="count" id="c-open">0</span></div>
-    <div class="tab" onclick="setTab('urgent',this)">דחוף <span class="count" id="c-urgent">0</span></div>
-    <div class="tab" onclick="setTab('done',this)">סופק <span class="count" id="c-done">0</span></div>
-    <div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="count" id="c-service">0</span></div>
-    <div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="count" id="c-service-done">0</span></div>
+    <div class="tab active" onclick="setTab('all',this)">הכל <span class="cnt" id="c-all">0</span></div>
+    <div class="tab" onclick="setTab('open',this)">פתוח <span class="cnt" id="c-open">0</span></div>
+    <div class="tab" onclick="setTab('urgent',this)">דחוף <span class="cnt" id="c-urgent">0</span></div>
+    <div class="tab" onclick="setTab('done',this)">סופק <span class="cnt" id="c-done">0</span></div>
+    <div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="cnt" id="c-service">0</span></div>
+    <div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="cnt" id="c-service-done">0</span></div>
   </div>
-  <div class="table-wrap">
-    <table id="main-table">
-      <thead id="thead"></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
+
+  <div class="cards" id="cards"></div>
   <div class="updated" id="updated"></div>
 </div>
+
 <script>
 let allData={orders:[],service:[]};
 let currentTab='all';
-function setTab(tab,el){currentTab=tab;document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));el.classList.add('active');render();}
-function isChecked(val){if(val===true)return true;const s=String(val||'').trim().toUpperCase();return s==='TRUE'||s==='V'||s==='YES'||s==='1'||s==='כן';}
-function isUrgent(row){return String(row.orderNum||'').includes('דחוף')||String(row.orderNum||'').toUpperCase().includes('URGENT');}
-function getStatus(row){if(isUrgent(row))return 'urgent';if(isChecked(row.supplied))return 'done';return 'open';}
-function badgeHtml(status){const map={open:['badge-open','פתוח'],done:['badge-done','סופק'],urgent:['badge-urgent','דחוף'],service:['badge-service','שירות פתוח'],'service-done':['badge-service-done','שירות טופל']};const[cls,label]=map[status]||['badge-open',status];return '<span class="badge '+cls+'">'+label+'</span>';}
-function linkHtml(url,icon,title){if(!url||url.trim()==='')return '<span style="color:#d1d5db">—</span>';return '<a href="'+url+'" target="_blank" class="icon-link" title="'+title+'">'+icon+'</a>';}
-function formatDate(val){if(!val||val==='29/01/1900'||val==='17/01/1900')return '—';return val;}
-function formatMoney(val){if(!val)return '—';const n=parseFloat(String(val).replace(/[^0-9.]/g,''));if(isNaN(n))return val;return '₪'+n.toLocaleString();}
+
+function setTab(tab,el){
+  currentTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+function isChecked(val){
+  if(val===true)return true;
+  const s=String(val||'').trim().toUpperCase();
+  return s==='TRUE'||s==='V'||s==='YES'||s==='1'||s==='כן';
+}
+
+function isUrgent(row){
+  return String(row.orderNum||'').includes('דחוף')||String(row.orderNum||'').toUpperCase().includes('URGENT');
+}
+
+function getStatus(row){
+  if(isUrgent(row))return 'urgent';
+  if(isChecked(row.supplied))return 'done';
+  return 'open';
+}
+
+function badgeHtml(status){
+  const map={
+    open:['b-open','פתוח'],
+    done:['b-done','סופק'],
+    urgent:['b-urgent','דחוף'],
+    service:['b-service','שירות פתוח'],
+    'service-done':['b-sdone','שירות טופל']
+  };
+  const[cls,label]=map[status]||['b-open',status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function fmtDate(v){
+  if(!v||v==='29/01/1900'||v==='17/01/1900')return '—';
+  return v;
+}
+
+function fmtMoney(v){
+  if(!v)return '—';
+  const n=parseFloat(String(v).replace(/[^0-9.]/g,''));
+  return isNaN(n)?v:'₪'+Math.round(n).toLocaleString();
+}
+
+function linkBtn(url,icon,label){
+  if(!url||!url.trim())return `<span class="link-btn no-link">${icon} ${label}</span>`;
+  return `<a href="${url}" target="_blank" class="link-btn">${icon} ${label}</a>`;
+}
+
+function renderOrderCard(r){
+  const status=getStatus(r);
+  const urgent=status==='urgent';
+  return `<div class="card${urgent?' urgent':''}">
+    <div class="card-header">
+      <span class="card-num">#${r.orderNum||'—'}</span>
+      ${badgeHtml(status)}
+    </div>
+    <div class="card-grid">
+      <div><div class="field-label">עיר</div><div class="field-val">${r.city||'—'}</div></div>
+      <div><div class="field-label">עלות</div><div class="field-val">${fmtMoney(r.cost)}</div></div>
+      <div><div class="field-label">תאריך הזמנה</div><div class="field-val">${fmtDate(r.orderDate)}</div></div>
+      <div><div class="field-label">מועד אספקה</div><div class="field-val">${fmtDate(r.deliveryDate)}</div></div>
+    </div>
+    ${r.notes?`<div class="notes-badge">📝 ${r.notes}</div><br>`:'' }
+    <div class="card-footer">
+      ${linkBtn(r.invoiceLink,'📄','חשבונית')}
+      ${linkBtn(r.confirmationLink,'✍️','אישור קבלה')}
+    </div>
+  </div>`;
+}
+
+function renderServiceCard(r){
+  const fixed=isChecked(r.fixed);
+  return `<div class="card">
+    <div class="card-header">
+      <span class="card-num">#${r.orderNum||'—'}</span>
+      ${badgeHtml(fixed?'service-done':'service')}
+    </div>
+    <div class="card-grid">
+      <div><div class="field-label">תאריך בקשה</div><div class="field-val">${fmtDate(r.requestDate)}</div></div>
+      <div><div class="field-label">תאריך טיפול</div><div class="field-val">${fmtDate(r.fixDate)}</div></div>
+    </div>
+    ${r.notes?`<div class="notes-badge">📝 ${r.notes}</div>`:''}
+  </div>`;
+}
+
 function render(){
   const q=document.getElementById('search').value.trim().toLowerCase();
-  const isServiceTab=currentTab==='service'||currentTab==='service-done';
+  const isSvc=currentTab==='service'||currentTab==='service-done';
   let rows=[];
-  if(isServiceTab){
+
+  if(isSvc){
     rows=allData.service.filter(r=>{
       const fixed=isChecked(r.fixed);
       if(currentTab==='service'&&fixed)return false;
       if(currentTab==='service-done'&&!fixed)return false;
-      if(q){const h=[r.orderNum,r.requestDate,r.fixDate,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+      if(q){const h=[r.orderNum,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
       return true;
     });
   } else {
     rows=allData.orders.filter(r=>{
-      const status=getStatus(r);
-      if(currentTab==='open'&&status!=='open')return false;
-      if(currentTab==='urgent'&&status!=='urgent')return false;
-      if(currentTab==='done'&&status!=='done')return false;
+      const s=getStatus(r);
+      if(currentTab==='open'&&s!=='open')return false;
+      if(currentTab==='urgent'&&s!=='urgent')return false;
+      if(currentTab==='done'&&s!=='done')return false;
       if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
       return true;
     });
   }
-  const thead=document.getElementById('thead');
-  const tbody=document.getElementById('tbody');
-  if(isServiceTab){
-    thead.innerHTML='<tr><th>מספר הזמנה</th><th>תאריך בקשה</th><th>תאריך טיפול</th><th>סטטוס</th><th>הערות</th></tr>';
-    tbody.innerHTML=rows.length===0?'<tr><td colspan="5" class="empty">אין רשומות</td></tr>':rows.map(r=>'<tr><td>'+r.orderNum+'</td><td>'+formatDate(r.requestDate)+'</td><td>'+formatDate(r.fixDate)+'</td><td>'+badgeHtml(isChecked(r.fixed)?'service-done':'service')+'</td><td class="notes-cell" title="'+(r.notes||'')+'">'+(r.notes||'—')+'</td></tr>').join('');
+
+  const container=document.getElementById('cards');
+  if(rows.length===0){
+    container.innerHTML='<div class="empty">אין רשומות</div>';
   } else {
-    thead.innerHTML='<tr><th>מספר הזמנה</th><th>תאריך הזמנה</th><th>עיר</th><th>עלות</th><th>מועד אספקה</th><th>אספקה מיידית</th><th>סטטוס</th><th>הערות</th><th>חשבונית</th><th>אישור קבלה</th></tr>';
-    tbody.innerHTML=rows.length===0?'<tr><td colspan="10" class="empty">אין רשומות</td></tr>':rows.map(r=>'<tr><td><strong>'+(r.orderNum||'—')+'</strong></td><td>'+formatDate(r.orderDate)+'</td><td>'+(r.city||'—')+'</td><td>'+formatMoney(r.cost)+'</td><td>'+formatDate(r.deliveryDate)+'</td><td>'+(isChecked(r.immediate)?'✓':'—')+'</td><td>'+badgeHtml(getStatus(r))+'</td><td class="notes-cell" title="'+(r.notes||'')+'">'+(r.notes||'—')+'</td><td>'+linkHtml(r.invoiceLink,'📄','חשבונית')+'</td><td>'+linkHtml(r.confirmationLink,'✍️','אישור קבלה')+'</td></tr>').join('');
+    container.innerHTML=rows.map(r=>isSvc?renderServiceCard(r):renderOrderCard(r)).join('');
   }
   updateCounts();
 }
+
 function updateCounts(){
-  const orders=allData.orders;const service=allData.service;
+  const o=allData.orders, s=allData.service;
   const q=document.getElementById('search').value.trim().toLowerCase();
-  const fo=fn=>orders.filter(r=>{if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}return fn(r);});
-  document.getElementById('c-all').textContent=orders.length+service.length;
+  const fo=fn=>o.filter(r=>{
+    if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+    return fn(r);
+  });
+  document.getElementById('c-all').textContent=o.length+s.length;
   document.getElementById('c-open').textContent=fo(r=>getStatus(r)==='open').length;
   document.getElementById('c-urgent').textContent=fo(r=>getStatus(r)==='urgent').length;
   document.getElementById('c-done').textContent=fo(r=>getStatus(r)==='done').length;
-  document.getElementById('c-service').textContent=service.filter(r=>!isChecked(r.fixed)).length;
-  document.getElementById('c-service-done').textContent=service.filter(r=>isChecked(r.fixed)).length;
-  const open=orders.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
+  document.getElementById('c-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
+  document.getElementById('c-service-done').textContent=s.filter(r=>isChecked(r.fixed)).length;
+
+  const open=o.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
   document.getElementById('s-open').textContent=open.length;
-  document.getElementById('s-urgent').textContent=orders.filter(r=>getStatus(r)==='urgent').length;
-  document.getElementById('s-service').textContent=service.filter(r=>!isChecked(r.fixed)).length;
-  const total=open.reduce((s,r)=>s+(parseFloat(String(r.cost||'').replace(/[^0-9.]/g,''))||0),0);
+  document.getElementById('s-urgent').textContent=o.filter(r=>getStatus(r)==='urgent').length;
+  document.getElementById('s-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
+  const total=open.reduce((sum,r)=>sum+(parseFloat(String(r.cost||'').replace(/[^0-9.]/g,''))||0),0);
   document.getElementById('s-sum').textContent='₪'+Math.round(total).toLocaleString();
 }
+
 async function load(){
   document.getElementById('updated').textContent='טוען...';
   try{
@@ -147,10 +239,14 @@ async function load(){
     if(!r.ok)throw new Error('שגיאת שרת '+r.status);
     const d=await r.json();
     if(d.error)throw new Error(d.error);
-    allData=d;render();
+    allData=d;
+    render();
     document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
-  }catch(e){document.getElementById('updated').textContent='שגיאה: '+e.message;}
+  }catch(e){
+    document.getElementById('updated').textContent='שגיאה: '+e.message;
+  }
 }
+
 load();
 </script>
 </body>
