@@ -357,4 +357,37 @@ app.post('/confirmation', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
+// ── Upload Zoho Invoice to Drive + Sheets ─────────────────────────────────────
+app.post('/api/upload-zoho-invoice', async (req, res) => {
+  try {
+    const { invoiceNumber } = req.body;
+    if (!invoiceNumber) return res.status(400).json({ error: 'Missing invoiceNumber' });
+
+    // Find invoice in Zoho by invoice number
+    const search = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
+    if (!search.invoices || search.invoices.length === 0) return res.status(404).json({ error: 'חשבונית לא נמצאה ב-Zoho: ' + invoiceNumber });
+
+    const invoice = search.invoices[0];
+    const invoiceId = invoice.invoice_id;
+    const amount = parseFloat(invoice.total || 0);
+    const date = invoice.date || new Date().toLocaleDateString('he-IL');
+    const referenceNum = invoice.reference_number || '';
+
+    // Download PDF from Zoho
+    const pdfBuffer = await downloadZohoPdf(invoiceId);
+
+    // Upload to Drive in correct month folder
+    const driveLink = await uploadIncomePdf(pdfBuffer, invoiceNumber, date);
+
+    // Add row to income sheet
+    await addIncomeSheetRow(date, amount, driveLink, invoiceNumber, referenceNum);
+
+    console.log('✅ Invoice uploaded:', invoiceNumber, '| Drive:', driveLink);
+    res.json({ success: true, driveLink });
+  } catch (err) {
+    console.error('upload-zoho-invoice error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log('Server running on port ' + PORT));
