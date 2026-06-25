@@ -194,7 +194,7 @@ async function addIncomeSheetRow(dateStr, amount, driveLink, invoiceNum, referen
   const client = await serviceAuth.getClient();
   const sheets = google.sheets({ version: 'v4', auth: client });
   const sheetName = await getOrCreateMonthSheet(sheets, dateStr);
-  await sheets.spreadsheets.values.append({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A:E', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[dateStr, amount, driveLink, '', invoiceNum]] } });
+  await sheets.spreadsheets.values.append({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A:E', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[dateStr.replace(/'/g,''), amount, driveLink, invoiceNum]] } });
 }
 
 // ── PayPal Webhook ─────────────────────────────────────────────────────────────
@@ -249,9 +249,14 @@ app.get('/api/check-duplicate', async (req, res) => {
     if (!orderNum) return res.json({ isDuplicate: false });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!B:B' });
-    const exists = (resp.data.values || []).some(row => String(row[0] || '').trim() === orderNum);
-    res.json({ isDuplicate: exists });
+    // Check if order exists in orders sheet
+    const ordersResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:A' });
+    const orderExists = (ordersResp.data.values || []).some(row => String(row[0] || '').includes(orderNum));
+    if (!orderExists) return res.json({ isDuplicate: false, notFound: true });
+    // Check if already confirmed
+    const confResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!B:B' });
+    const isDuplicate = (confResp.data.values || []).some(row => String(row[0] || '').trim() === orderNum);
+    res.json({ isDuplicate, notFound: false });
   } catch (err) { console.error('check-duplicate error:', err); res.json({ isDuplicate: false }); }
 });
 
@@ -334,7 +339,7 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:A' });
     const rows = resp.data.values || [];
     let targetRow = -1;
-    for (let i = 1; i < rows.length; i++) { if (String(rows[i][0]||'').trim() === String(orderNum).trim()) { targetRow = i + 1; break; } }
+    for (let i = 1; i < rows.length; i++) { if (String(rows[i][0]||'').includes(String(orderNum).trim())) { targetRow = i + 1; break; } }
     if (targetRow === -1) { console.log('Order not found:', orderNum); return; }
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!J' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[docLink]] } });
   } catch (err) { console.error('Failed to write link:', err.message); }
@@ -422,7 +427,7 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
         const rows2 = resp2.data.values || [];
         let targetRow2 = -1;
         for (let i = 1; i < rows2.length; i++) {
-          if (String(rows2[i][0] || "").trim().replace(/-.*/,"") === String(referenceNum).trim()) { targetRow2 = i + 1; break; }
+          if (String(rows2[i][0] || "").includes(String(referenceNum).trim())) { targetRow2 = i + 1; break; }
         }
         if (targetRow2 !== -1) {
           await sheets2.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + "!K" + targetRow2, valueInputOption: "RAW", requestBody: { values: [[driveLink]] } });
