@@ -234,10 +234,10 @@ app.get('/api/crm-data', async (req, res) => {
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
     const [ordersResp, serviceResp] = await Promise.all([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' }),
+      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:K' }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:E' })
     ]);
-    const orders = (ordersResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', orderDate: r[1]||'', invoiceLink: r[2]||'', city: r[3]||'', cost: r[4]||'', immediate: r[5]||'', supplied: r[6]||'', deliveryDate: r[7]||'', notes: r[8]||'', confirmationLink: r[9]||'' }));
+    const orders = (ordersResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', orderDate: r[1]||'', invoiceLink: r[2]||'', city: r[3]||'', cost: r[4]||'', immediate: r[5]||'', supplied: r[6]||'', deliveryDate: r[7]||'', notes: r[8]||'', confirmationLink: r[9]||'', zohoInvoiceLink: r[10]||'' }));
     const service = (serviceResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', requestDate: r[1]||'', fixed: r[2]||'', fixDate: r[3]||'', notes: r[4]||'' }));
     res.json({ orders, service });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
