@@ -399,6 +399,23 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
     await addIncomeSheetRow(date, amount, driveLink, invoiceNumber, referenceNum);
 
     console.log('✅ Invoice uploaded:', invoiceNumber, '| Drive:', driveLink);
+    // Write invoice link to orders sheet column K
+    if (referenceNum) {
+      try {
+        const client2 = await serviceAuth.getClient();
+        const sheets2 = google.sheets({ version: "v4", auth: client2 });
+        const resp2 = await sheets2.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + "!A:A" });
+        const rows2 = resp2.data.values || [];
+        let targetRow2 = -1;
+        for (let i = 1; i < rows2.length; i++) {
+          if (String(rows2[i][0] || "").trim() === String(referenceNum).trim()) { targetRow2 = i + 1; break; }
+        }
+        if (targetRow2 !== -1) {
+          await sheets2.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + "!K" + targetRow2, valueInputOption: "RAW", requestBody: { values: [[driveLink]] } });
+          console.log("Invoice link written to orders row", targetRow2);
+        }
+      } catch (e2) { console.error("Failed to write invoice link:", e2.message); }
+    }
     res.json({ success: true, driveLink });
   } catch (err) {
     console.error('upload-zoho-invoice error:', err);
