@@ -68,7 +68,7 @@ app.post('/zoho-webhook', async (req, res) => {
     const invoiceNum = invoice.invoice_number || '';
     const amount = parseFloat(invoice.total || 0);
     const date = invoice.date || new Date().toLocaleDateString('he-IL');
-    const referenceNum = invoice.reference_number || '';
+    const referenceNum = invoice.po_number || invoice.reference_number || '';
 
     // Download PDF from Zoho
     const pdfBuffer = await downloadZohoPdf(invoiceId);
@@ -367,6 +367,20 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
     invoiceNumber = invoiceNumber.trim();
     if (/^\d+$/.test(invoiceNumber)) invoiceNumber = 'INV-' + invoiceNumber;
 
+
+    // Check for duplicate in income sheet
+    try {
+      const clientCheck = await serviceAuth.getClient();
+      const sheetsCheck = google.sheets({ version: 'v4', auth: clientCheck });
+      const monthNamesD = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+      const nowD = new Date();
+      const sheetNameD = monthNamesD[nowD.getMonth()] + ' ' + nowD.getFullYear();
+      const dupCheck = await sheetsCheck.spreadsheets.values.get({ spreadsheetId: INCOME_SHEET_ID, range: sheetNameD + '!E:E' }).catch(() => null);
+      if (dupCheck && dupCheck.data.values) {
+        const exists = dupCheck.data.values.some(row => String(row[0] || '').trim() === invoiceNumber);
+        if (exists) return res.status(400).json({ error: 'חשבונית ' + invoiceNumber + ' כבר קיימת ב-Excel. למחיקה — מחק את השורה ישירות בגיליון.' });
+      }
+    } catch (dupErr) { console.log('Duplicate check skipped:', dupErr.message); }
     // Find invoice in Zoho — try multiple search methods
     let invoice = null;
     const search1 = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
@@ -387,7 +401,7 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
     const invoiceId = invoice.invoice_id;
     const amount = parseFloat(invoice.total || 0);
     const date = invoice.date || new Date().toLocaleDateString('he-IL');
-    const referenceNum = invoice.reference_number || '';
+    const referenceNum = invoice.po_number || invoice.reference_number || '';
 
     // Download PDF from Zoho
     const pdfBuffer = await downloadZohoPdf(invoiceId);
@@ -408,7 +422,7 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
         const rows2 = resp2.data.values || [];
         let targetRow2 = -1;
         for (let i = 1; i < rows2.length; i++) {
-          if (String(rows2[i][0] || "").trim() === String(referenceNum).trim()) { targetRow2 = i + 1; break; }
+          if (String(rows2[i][0] || "").trim().replace(/-.*/,"") === String(referenceNum).trim()) { targetRow2 = i + 1; break; }
         }
         if (targetRow2 !== -1) {
           await sheets2.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + "!K" + targetRow2, valueInputOption: "RAW", requestBody: { values: [[driveLink]] } });
