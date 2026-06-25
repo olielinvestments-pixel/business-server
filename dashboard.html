@@ -1,393 +1,307 @@
-const express = require('express');
-const { google } = require('googleapis');
-const path = require('path');
-const https = require('https');
-const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, BorderStyle } = require('docx');
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>דשבורד עסקי</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
+.top{background:white;border-bottom:1px solid #e5e7eb;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.top h1{font-size:17px;font-weight:600;color:#111}
+.refresh-btn{padding:6px 14px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px}
+.container{padding:12px}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px}
+.stat{background:white;border-radius:10px;padding:12px 14px;border:1px solid #e5e7eb}
+.stat-label{font-size:11px;color:#6b7280;margin-bottom:4px}
+.stat-val{font-size:22px;font-weight:700}
+.stat-val.blue{color:#1d4ed8}
+.stat-val.red{color:#dc2626}
+.stat-val.amber{color:#d97706}
+.stat-val.green{color:#16a34a}
 
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-const PORT = process.env.PORT || 3000;
+/* Zoho Invoice Upload Panel */
+.invoice-panel{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
+.invoice-panel h3{font-size:14px;font-weight:600;color:#111;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.invoice-input-row{display:flex;gap:8px;align-items:center}
+.invoice-input-row input{flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;font-size:14px;outline:none;direction:ltr}
+.invoice-input-row input:focus{border-color:#93c5fd}
+.upload-btn{padding:8px 16px;background:#059669;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;white-space:nowrap;font-weight:500}
+.upload-btn:disabled{background:#9ca3af;cursor:not-allowed}
+.invoice-status{margin-top:8px;font-size:12px;padding:6px 10px;border-radius:8px;display:none}
+.invoice-status.success{background:#dcfce7;color:#15803d;display:block}
+.invoice-status.error{background:#fee2e2;color:#dc2626;display:block}
+.invoice-status.loading{background:#dbeafe;color:#1d4ed8;display:block}
 
-const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-const serviceAuth = new google.auth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/drive','https://www.googleapis.com/auth/spreadsheets'] });
+.search-bar{background:white;border-radius:10px;padding:10px 14px;border:1px solid #e5e7eb;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.search-bar input{flex:1;border:none;outline:none;font-size:14px;background:transparent;color:#222}
+.search-bar input::placeholder{color:#9ca3af}
+.tabs{display:flex;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{font-size:12px;padding:6px 12px;border-radius:20px;white-space:nowrap;border:1px solid #e5e7eb;color:#6b7280;background:white;cursor:pointer;flex-shrink:0}
+.tab.active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:600}
+.tab .cnt{font-size:11px;background:#f3f4f6;padding:1px 5px;border-radius:10px;margin-right:3px}
+.tab.active .cnt{background:#bfdbfe;color:#1e40af}
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px}
+.card.urgent{border-color:#fca5a5;border-width:1.5px}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.card-num{font-size:15px;font-weight:600;color:#111}
+.badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500}
+.b-open{background:#dbeafe;color:#1d4ed8}
+.b-done{background:#dcfce7;color:#15803d}
+.b-urgent{background:#fee2e2;color:#dc2626}
+.b-service{background:#fef3c7;color:#92400e}
+.b-sdone{background:#f3f4f6;color:#374151}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:10px}
+.field-label{font-size:11px;color:#6b7280;margin-bottom:2px}
+.field-val{font-size:13px;color:#111;font-weight:500}
+.card-footer{display:flex;gap:8px;padding-top:10px;border-top:1px solid #f3f4f6;flex-wrap:wrap}
+.link-btn{font-size:12px;color:#1d4ed8;display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;text-decoration:none;white-space:nowrap}
+.link-btn.no-link{color:#9ca3af;border-color:#e5e7eb;background:#f9fafb;cursor:default}
+.notes-badge{font-size:11px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px}
+.updated{font-size:11px;color:#9ca3af;text-align:center;padding:8px}
+@media(min-width:640px){
+.stats{grid-template-columns:repeat(4,1fr)}
+.cards{display:grid;grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="top">
+<h1>דשבורד עסקי</h1>
+<button class="refresh-btn" onclick="load()">&#8635; רענן</button>
+</div>
+<div class="container">
+<div class="stats">
+<div class="stat"><div class="stat-label">הזמנות פתוחות</div><div class="stat-val blue" id="s-open">-</div></div>
+<div class="stat"><div class="stat-label">דחופות</div><div class="stat-val red" id="s-urgent">-</div></div>
+<div class="stat"><div class="stat-label">שירות פתוח</div><div class="stat-val amber" id="s-service">-</div></div>
+<div class="stat"><div class="stat-label">סה"כ פתוח (₪)</div><div class="stat-val green" id="s-sum">-</div></div>
+</div>
 
-const oauthClient = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  'https://developers.google.com/oauthplayground'
-);
-oauthClient.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+<!-- Zoho Invoice Upload Panel -->
+<div class="invoice-panel">
+<h3>📤 העלאת חשבונית מ-Zoho</h3>
+<div class="invoice-input-row">
+<input type="text" id="zoho-inv-num" placeholder="מספר חשבונית (לדוגמה: INV-890019)" />
+<button class="upload-btn" onclick="uploadZohoInvoice()">העלה</button>
+</div>
+<div class="invoice-status" id="invoice-status"></div>
+</div>
 
-const SHEET_ID = process.env.SHEET_ID;
-const CONFIRMATIONS_FOLDER_ID = process.env.CONFIRMATIONS_FOLDER_ID;
-const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'אישורי קבלה';
-const ORDERS_SHEET_NAME = process.env.ORDERS_SHEET_NAME || 'מעקב הזמנות';
-const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
-const INCOME_SHEET_ID = process.env.INCOME_SHEET_ID;
-const INCOME_FOLDER_ID = process.env.INCOME_FOLDER_ID;
+<div class="search-bar">
+<svg width="15" height="15" fill="none" stroke="#9ca3af" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+<input type="text" id="search" placeholder="חיפוש לפי מספר הזמנה, עיר..." oninput="render()">
+</div>
 
-const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
-const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
-const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
-let ZOHO_REFRESH_TOKEN = process.env.ZOHO_REFRESH_TOKEN || '';
-let zohoAccessToken = '';
-let zohoTokenExpiry = 0;
+<div class="tabs">
+<div class="tab active" onclick="setTab('all',this)">הכל <span class="cnt" id="c-all">0</span></div>
+<div class="tab" onclick="setTab('open',this)">פתוח <span class="cnt" id="c-open">0</span></div>
+<div class="tab" onclick="setTab('urgent',this)">דחוף <span class="cnt" id="c-urgent">0</span></div>
+<div class="tab" onclick="setTab('done',this)">סופק <span class="cnt" id="c-done">0</span></div>
+<div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="cnt" id="c-service">0</span></div>
+<div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="cnt" id="c-service-done">0</span></div>
+</div>
 
-const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+<div class="cards" id="cards"></div>
+<div class="updated" id="updated"></div>
+</div>
 
-app.get('/', (req, res) => res.send('Server is running ✅'));
-app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
-app.get('/confirmation-form', (req, res) => res.sendFile(path.join(__dirname, 'confirmation-form.html')));
+<script>
+let allData={orders:[],service:[]};
+let currentTab='all';
 
-// ── Zoho OAuth callback ────────────────────────────────────────────────────────
-app.get('/zoho-callback', async (req, res) => {
-  const code = req.query.code;
-  if (!code) return res.send('No code received');
-  try {
-    const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
-      code, client_id: ZOHO_CLIENT_ID, client_secret: ZOHO_CLIENT_SECRET,
-      redirect_uri: 'https://paypal-webhook-81m2.onrender.com/zoho-callback',
-      grant_type: 'authorization_code'
-    }).toString());
-    ZOHO_REFRESH_TOKEN = result.refresh_token;
-    res.send(`<h2>✅ Zoho connected!</h2><p>Refresh Token:</p><code style="word-break:break-all">${result.refresh_token}</code><p>Copy this token and add it to Render as <strong>ZOHO_REFRESH_TOKEN</strong></p>`);
-  } catch (err) { res.send('Error: ' + err.message); }
+async function uploadZohoInvoice(){
+const invNum=document.getElementById('zoho-inv-num').value.trim();
+const statusEl=document.getElementById('invoice-status');
+const btn=document.querySelector('.upload-btn');
+if(!invNum){
+statusEl.className='invoice-status error';
+statusEl.textContent='אנא הכנס מספר חשבונית';
+return;
+}
+statusEl.className='invoice-status loading';
+statusEl.textContent='מוריד חשבונית מ-Zoho ומעלה...';
+btn.disabled=true;
+try{
+const r=await fetch('/api/upload-zoho-invoice',{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({invoiceNumber:invNum})
 });
+const d=await r.json();
+if(d.success){
+statusEl.className='invoice-status success';
+statusEl.textContent='✅ חשבונית '+invNum+' הועלתה בהצלחה ל-Drive ונרשמה ב-Excel';
+document.getElementById('zoho-inv-num').value='';
+}else{
+statusEl.className='invoice-status error';
+statusEl.textContent='שגיאה: '+(d.error||'לא ידוע');
+}
+}catch(e){
+statusEl.className='invoice-status error';
+statusEl.textContent='שגיאת חיבור: '+e.message;
+}finally{btn.disabled=false;}
+}
 
-// ── Zoho Webhook — fires when invoice is approved/paid ────────────────────────
-app.post('/zoho-webhook', async (req, res) => {
-  try {
-    const event = req.body;
-    const invoice = event.invoice || event.data && event.data.invoice;
-    if (!invoice) return res.json({ received: true });
+function setTab(tab,el){
+currentTab=tab;
+document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+el.classList.add('active');
+render();
+}
 
-    const status = invoice.status || '';
-    if (status !== 'paid' && status !== 'sent') return res.json({ received: true, skipped: true });
+function isChecked(val){
+if(val===true)return true;
+const s=String(val||'').trim().toUpperCase();
+return s==='TRUE'||s==='V'||s==='YES'||s==='1'||s==='כן';
+}
 
-    const invoiceId = invoice.invoice_id;
-    const invoiceNum = invoice.invoice_number || '';
-    const amount = parseFloat(invoice.total || 0);
-    const date = invoice.date || new Date().toLocaleDateString('he-IL');
-    const referenceNum = invoice.reference_number || '';
+function isUrgent(row){
+return String(row.orderNum||'').includes('דחוף')||String(row.orderNum||'').toUpperCase().includes('URGENT');
+}
 
-    // Download PDF from Zoho
-    const pdfBuffer = await downloadZohoPdf(invoiceId);
+function getStatus(row){
+if(isUrgent(row))return 'urgent';
+if(isChecked(row.supplied))return 'done';
+return 'open';
+}
 
-    // Upload to Drive in correct month folder
-    const driveLink = await uploadIncomePdf(pdfBuffer, invoiceNum, date);
+function badgeHtml(status){
+const map={
+open:['b-open','פתוח'],
+done:['b-done','סופק'],
+urgent:['b-urgent','דחוף'],
+service:['b-service','שירות פתוח'],
+'service-done':['b-sdone','שירות טופל']
+};
+const[cls,label]=map[status]||['b-open',status];
+return `<span class="badge ${cls}">${label}</span>`;
+}
 
-    // Add row to income sheet
-    await addIncomeSheetRow(date, amount, driveLink, invoiceNum, referenceNum);
+function fmtDate(v){
+if(!v||v==='29/01/1900'||v==='17/01/1900')return '—';
+return v;
+}
 
-    console.log('✅ Invoice processed:', invoiceNum, '| Drive:', driveLink);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('Zoho webhook error:', err);
-    res.status(500).json({ error: err.message });
-  }
+function fmtMoney(v){
+if(!v)return '—';
+const n=parseFloat(String(v).replace(/[^0-9.]/g,''));
+return isNaN(n)?v:'₪'+Math.round(n).toLocaleString();
+}
+
+function linkBtn(url,icon,label){
+if(!url||!url.trim())return `<span class="link-btn no-link">${icon} ${label}</span>`;
+return `<a href="${url}" target="_blank" class="link-btn">${icon} ${label}</a>`;
+}
+
+function renderOrderCard(r){
+const status=getStatus(r);
+const urgent=status==='urgent';
+return `<div class="card${urgent?' urgent':''}">
+<div class="card-header">
+<span class="card-num">#${r.orderNum||'—'}</span>
+${badgeHtml(status)}
+</div>
+<div class="card-grid">
+<div><div class="field-label">עיר</div><div class="field-val">${r.city||'—'}</div></div>
+<div><div class="field-label">עלות</div><div class="field-val">${fmtMoney(r.cost)}</div></div>
+<div><div class="field-label">תאריך הזמנה</div><div class="field-val">${fmtDate(r.orderDate)}</div></div>
+<div><div class="field-label">מועד אספקה</div><div class="field-val">${fmtDate(r.deliveryDate)}</div></div>
+</div>
+${r.notes?`<div class="notes-badge">📝 ${r.notes}</div><br>`:''}
+<div class="card-footer">
+${linkBtn(r.invoiceLink,'📄','הזמנת רכש')}
+${linkBtn(r.confirmationLink,'✍️','אישור קבלה')}
+</div>
+</div>`;
+}
+
+function renderServiceCard(r){
+const fixed=isChecked(r.fixed);
+return `<div class="card">
+<div class="card-header">
+<span class="card-num">#${r.orderNum||'—'}</span>
+${badgeHtml(fixed?'service-done':'service')}
+</div>
+<div class="card-grid">
+<div><div class="field-label">תאריך בקשה</div><div class="field-val">${fmtDate(r.requestDate)}</div></div>
+<div><div class="field-label">תאריך טיפול</div><div class="field-val">${fmtDate(r.fixDate)}</div></div>
+</div>
+${r.notes?`<div class="notes-badge">📝 ${r.notes}</div>`:''}
+</div>`;
+}
+
+function render(){
+const q=document.getElementById('search').value.trim().toLowerCase();
+const isSvc=currentTab==='service'||currentTab==='service-done';
+let rows=[];
+if(isSvc){
+rows=allData.service.filter(r=>{
+const fixed=isChecked(r.fixed);
+if(currentTab==='service'&&fixed)return false;
+if(currentTab==='service-done'&&!fixed)return false;
+if(q){const h=[r.orderNum,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+return true;
 });
-
-// ── Zoho helpers ───────────────────────────────────────────────────────────────
-function zohoPost(url, body) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const options = { hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } };
-    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
-    req.on('error', reject); req.write(body); req.end();
-  });
-}
-
-async function getZohoAccessToken() {
-  if (zohoAccessToken && Date.now() < zohoTokenExpiry - 60000) return zohoAccessToken;
-  const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
-    refresh_token: ZOHO_REFRESH_TOKEN, client_id: ZOHO_CLIENT_ID, client_secret: ZOHO_CLIENT_SECRET, grant_type: 'refresh_token'
-  }).toString());
-  if (!result.access_token) throw new Error('Failed to get Zoho token: ' + JSON.stringify(result));
-  zohoAccessToken = result.access_token;
-  zohoTokenExpiry = Date.now() + (result.expires_in || 3600) * 1000;
-  return zohoAccessToken;
-}
-
-async function zohoApiPost(path, body) {
-  const token = await getZohoAccessToken();
-  const bodyStr = JSON.stringify(body);
-  return new Promise((resolve, reject) => {
-    const options = { hostname: 'invoice.zoho.com', path: '/api/v3' + path, method: 'POST', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID, 'Content-Type': 'application/json;charset=UTF-8', 'Content-Length': Buffer.byteLength(bodyStr) } };
-    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
-    req.on('error', reject); req.write(bodyStr); req.end();
-  });
-}
-
-async function zohoApiGet(apiPath) {
-  const token = await getZohoAccessToken();
-  return new Promise((resolve, reject) => {
-    const options = { hostname: 'invoice.zoho.com', path: '/api/v3' + apiPath, method: 'GET', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID } };
-    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
-    req.on('error', reject); req.end();
-  });
-}
-
-async function downloadZohoPdf(invoiceId) {
-  const token = await getZohoAccessToken();
-  return new Promise((resolve, reject) => {
-    const options = { hostname: 'invoice.zoho.com', path: `/api/v3/invoices/${invoiceId}?accept=pdf`, method: 'GET', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID } };
-    const req = https.request(options, r => { const chunks = []; r.on('data', d => chunks.push(d)); r.on('end', () => resolve(Buffer.concat(chunks))); });
-    req.on('error', reject); req.end();
-  });
-}
-
-async function getOrCreateZohoContact(name) {
-  const search = await zohoApiGet('/contacts?contact_name=' + encodeURIComponent(name));
-  if (search.contacts && search.contacts.length > 0) return search.contacts[0].contact_id;
-  const result = await zohoApiPost('/contacts', { contact_name: name, contact_type: 'customer' });
-  if (result.contact) return result.contact.contact_id;
-  throw new Error('Failed to create contact: ' + JSON.stringify(result));
-}
-
-async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD) {
-  const contactId = await getOrCreateZohoContact(customerName);
-  const result = await zohoApiPost('/invoices', { customer_id: contactId, reference_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'מוצר', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
-  if (result.invoice) return result.invoice;
-  throw new Error('Failed to create invoice: ' + JSON.stringify(result));
-}
-
-// ── Drive/Sheets income helpers ────────────────────────────────────────────────
-async function getOrCreateMonthFolder(drive, dateStr) {
-  const date = dateStr ? new Date(dateStr) : new Date();
-  const monthName = HEBREW_MONTHS[date.getMonth()];
-  const year = date.getFullYear();
-  const folderName = `${monthName} ${year}`;
-
-  const searchRes = await drive.files.list({ q: `'${INCOME_FOLDER_ID}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, fields: 'files(id)' });
-  if (searchRes.data.files.length > 0) return searchRes.data.files[0].id;
-
-  const newFolder = await drive.files.create({ requestBody: { name: folderName, parents: [INCOME_FOLDER_ID], mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
-  return newFolder.data.id;
-}
-
-async function uploadIncomePdf(pdfBuffer, invoiceNum, dateStr) {
-  const { Readable } = require('stream');
-  const drive = google.drive({ version: 'v3', auth: oauthClient });
-  const folderId = await getOrCreateMonthFolder(drive, dateStr);
-  const fileName = `Invoice-${invoiceNum}.pdf`;
-  const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId], mimeType: 'application/pdf' }, media: { mimeType: 'application/pdf', body: Readable.from(pdfBuffer) }, fields: 'id, webViewLink' });
-  await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
-  return file.data.webViewLink;
-}
-
-async function getOrCreateMonthSheet(sheets, dateStr) {
-  const date = dateStr ? new Date(dateStr) : new Date();
-  const monthName = HEBREW_MONTHS[date.getMonth()];
-  const year = date.getFullYear();
-  const sheetName = `${monthName} ${year}`;
-
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: INCOME_SHEET_ID });
-  const existing = meta.data.sheets.find(s => s.properties.title === sheetName);
-  if (existing) return sheetName;
-
-  await sheets.spreadsheets.batchUpdate({ spreadsheetId: INCOME_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
-  await sheets.spreadsheets.values.update({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A1:E1', valueInputOption: 'RAW', requestBody: { values: [['תאריך', 'סכום', 'קישור לחשבונית', '', 'מספר חשבונית']] } });
-  return sheetName;
-}
-
-async function addIncomeSheetRow(dateStr, amount, driveLink, invoiceNum, referenceNum) {
-  const client = await serviceAuth.getClient();
-  const sheets = google.sheets({ version: 'v4', auth: client });
-  const sheetName = await getOrCreateMonthSheet(sheets, dateStr);
-  await sheets.spreadsheets.values.append({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A:E', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[dateStr, amount, driveLink, '', invoiceNum]] } });
-}
-
-// ── PayPal Webhook ─────────────────────────────────────────────────────────────
-app.post('/webhook', async (req, res) => {
-  try {
-    const event = req.body;
-    const eventType = event.event_type || '';
-    if (!eventType.includes('PAYMENT') && !eventType.includes('SALE') && !eventType.includes('CAPTURE')) return res.json({ received: true });
-
-    const resource = event.resource || {};
-    const amountUSD = parseFloat((resource.seller_receivable_breakdown && resource.seller_receivable_breakdown.net_amount && resource.seller_receivable_breakdown.net_amount.value) || 0);
-    const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
-    const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
-    const itemName = (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].items && resource.purchase_units[0].items[0] && resource.purchase_units[0].items[0].name) || 'מוצר';
-
-    console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
-
-    if (ZOHO_REFRESH_TOKEN && orderNum) {
-      try {
-        const invoice = await createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD);
-        console.log('✅ Zoho draft invoice created:', invoice.invoice_number);
-      } catch (zohoErr) { console.error('Zoho error (non-fatal):', zohoErr.message); }
-    }
-
-    res.json({ received: true });
-  } catch (err) { console.error('Webhook error:', err); res.status(500).json({ error: err.message }); }
+}else{
+rows=allData.orders.filter(r=>{
+const s=getStatus(r);
+if(currentTab==='open'&&s!=='open')return false;
+if(currentTab==='urgent'&&s!=='urgent')return false;
+if(currentTab==='done'&&s!=='done')return false;
+if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+return true;
 });
-
-function isChecked(val) {
-  if (val === true) return true;
-  const s = String(val || '').trim().toUpperCase();
-  return s === 'TRUE' || s === 'V' || s === 'YES' || s === '1' || s === 'כן';
+}
+const container=document.getElementById('cards');
+if(rows.length===0){
+container.innerHTML='<div class="empty">אין רשומות</div>';
+}else{
+container.innerHTML=rows.map(r=>isSvc?renderServiceCard(r):renderOrderCard(r)).join('');
+}
+updateCounts();
 }
 
-app.get('/api/crm-data', async (req, res) => {
-  try {
-    const client = await serviceAuth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
-    const [ordersResp, serviceResp] = await Promise.all([
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' }),
-      sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:E' })
-    ]);
-    const orders = (ordersResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', orderDate: r[1]||'', invoiceLink: r[2]||'', city: r[3]||'', cost: r[4]||'', immediate: r[5]||'', supplied: r[6]||'', deliveryDate: r[7]||'', notes: r[8]||'', confirmationLink: r[9]||'' }));
-    const service = (serviceResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', requestDate: r[1]||'', fixed: r[2]||'', fixDate: r[3]||'', notes: r[4]||'' }));
-    res.json({ orders, service });
-  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+function updateCounts(){
+const o=allData.orders,s=allData.service;
+const q=document.getElementById('search').value.trim().toLowerCase();
+const fo=fn=>o.filter(r=>{
+if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+return fn(r);
 });
-
-app.get('/api/check-duplicate', async (req, res) => {
-  try {
-    const orderNum = String(req.query.orderNum || '').trim();
-    if (!orderNum) return res.json({ isDuplicate: false });
-    const client = await serviceAuth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!B:B' });
-    const exists = (resp.data.values || []).some(row => String(row[0] || '').trim() === orderNum);
-    res.json({ isDuplicate: exists });
-  } catch (err) { console.error('check-duplicate error:', err); res.json({ isDuplicate: false }); }
-});
-
-app.get('/api/dashboard-data', async (req, res) => {
-  try {
-    const client = await serviceAuth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
-    const ordersResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:G' });
-    const orderRows = (ordersResp.data.values || []).slice(1);
-    let openOrders = 0, sumOpen = 0;
-    const costByOrderNum = {};
-    orderRows.forEach(row => {
-      const orderNum = row[0]; const cost = parseFloat(String(row[4]||'').replace(/[^0-9.]/g,''))||0; const gVal = row[6];
-      if (orderNum) { costByOrderNum[String(orderNum).trim()] = cost; if (!isChecked(gVal)) { openOrders++; sumOpen += cost; } }
-    });
-    const serviceResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:C' });
-    let openService = 0, serviceSum = 0;
-    (serviceResp.data.values || []).slice(1).forEach(row => { if (row[0] && !isChecked(row[2])) { openService++; serviceSum += costByOrderNum[String(row[0]).trim()]||0; } });
-    res.json({ openOrders, sumOpen, openService, serviceSum, updatedAt: new Date().toLocaleString('he-IL') });
-  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
-});
-
-function base64ToBuffer(base64Data) {
-  const matches = base64Data.match(/^data:(image\/(\w+));base64,(.+)$/);
-  if (!matches) throw new Error('Invalid base64 image');
-  return { mimeType: matches[1], ext: matches[2], buffer: Buffer.from(matches[3], 'base64') };
+document.getElementById('c-all').textContent=o.length+s.length;
+document.getElementById('c-open').textContent=fo(r=>getStatus(r)==='open').length;
+document.getElementById('c-urgent').textContent=fo(r=>getStatus(r)==='urgent').length;
+document.getElementById('c-done').textContent=fo(r=>getStatus(r)==='done').length;
+document.getElementById('c-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
+document.getElementById('c-service-done').textContent=s.filter(r=>isChecked(r.fixed)).length;
+const open=o.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
+document.getElementById('s-open').textContent=open.length;
+document.getElementById('s-urgent').textContent=o.filter(r=>getStatus(r)==='urgent').length;
+document.getElementById('s-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
+const total=open.reduce((sum,r)=>sum+(parseFloat(String(r.cost||'').replace(/[^0-9.]/g,''))||0),0);
+document.getElementById('s-sum').textContent='₪'+Math.round(total).toLocaleString();
 }
 
-function dividerParagraph() {
-  return new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC', space: 1 } }, spacing: { after: 200 } });
+async function load(){
+document.getElementById('updated').textContent='טוען...';
+try{
+const r=await fetch('/api/crm-data');
+if(!r.ok)throw new Error('שגיאת שרת '+r.status);
+const d=await r.json();
+if(d.error)throw new Error(d.error);
+allData=d;
+render();
+document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
+}catch(e){
+document.getElementById('updated').textContent='שגיאה: '+e.message;
+}
 }
 
-async function createConfirmationDocx(orderNum, confirmations, photosBase64, signatureBase64, timestamp) {
-  const dateStr = new Date(timestamp || Date.now()).toLocaleString('he-IL');
-  const sig = base64ToBuffer(signatureBase64);
-  const photoElements = [];
-  for (const photoBase64 of photosBase64) {
-    const photo = base64ToBuffer(photoBase64);
-    photoElements.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: photo.buffer, transformation: { width: 450, height: 300 }, type: photo.ext === 'jpg' ? 'jpg' : 'png' })], spacing: { after: 120 } }));
-  }
-  const children = [
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'אישור קבלת מוצר', bold: true, size: 40, font: 'Arial' })], spacing: { after: 100 } }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: dateStr, size: 20, color: '888888', font: 'Arial' })], spacing: { after: 200 } }),
-    dividerParagraph(),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'מספר הזמנה: ', bold: true, size: 26, font: 'Arial' }), new TextRun({ text: String(orderNum), size: 26, font: 'Arial' })], spacing: { after: 200 } }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'הצהרות שאושרו:', bold: true, size: 24, font: 'Arial' })], spacing: { after: 100 } }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: '✓ אני מאשר/ת כי קיבלתי את המוצר/ים בהתאם להזמנה שביצעתי. בדקתי את המוצר/ים בעת המסירה ואני מאשר/ת כי הם התקבלו במצב תקין, ללא נזק נראה לעין, ותואמים להזמנה שבוצעה. בחתימתי מטה אני מאשר/ת את קבלת המוצר/ים ואת שביעות רצוני ממצבם בעת המסירה.', size: 22, font: 'Arial', color: '333333' })], spacing: { after: 120 } }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: '✓ ידוע לי כי יתרת התשלום בגין המוצר משולמת ישירות לספק, וכי באחריותי לקבל מהספק אסמכתא עבור התשלום.', size: 22, font: 'Arial', color: '333333' })], spacing: { after: 80 } }),
-    dividerParagraph(),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'תמונות המוצר:', bold: true, size: 24, font: 'Arial' })], spacing: { after: 100 } }),
-    ...photoElements,
-    dividerParagraph(),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'חתימת הלקוח:', bold: true, size: 24, font: 'Arial' })], spacing: { after: 100 } }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ data: sig.buffer, transformation: { width: 400, height: 120 }, type: sig.ext === 'jpg' ? 'jpg' : 'png' })], spacing: { after: 200 } }),
-    dividerParagraph(),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: 'מסמך זה נוצר אוטומטית ומהווה אישור קבלת מוצר חתום דיגיטלית', size: 18, color: 'AAAAAA', font: 'Arial' })] })
-  ];
-  const doc = new Document({ sections: [{ properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1000, right: 1000, bottom: 1000, left: 1000 } } }, children }] });
-  return await Packer.toBuffer(doc);
-}
-
-async function uploadFileToDrive(buffer, fileName, mimeType) {
-  const { Readable } = require('stream');
-  const drive = google.drive({ version: 'v3', auth: oauthClient });
-  const file = await drive.files.create({ requestBody: { name: fileName, parents: [CONFIRMATIONS_FOLDER_ID], mimeType }, media: { mimeType, body: Readable.from(buffer) }, fields: 'id, webViewLink' });
-  await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
-  return file.data.webViewLink;
-}
-
-async function ensureSheetExists(sheets, sheetId, sheetName) {
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
-  if (!meta.data.sheets.some(s => s.properties.title === sheetName)) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:D1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','קישור לאישור','סטטוס']] } });
-  }
-}
-
-async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
-  try {
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:A' });
-    const rows = resp.data.values || [];
-    let targetRow = -1;
-    for (let i = 1; i < rows.length; i++) { if (String(rows[i][0]||'').trim() === String(orderNum).trim()) { targetRow = i + 1; break; } }
-    if (targetRow === -1) { console.log('Order not found:', orderNum); return; }
-    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!J' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[docLink]] } });
-  } catch (err) { console.error('Failed to write link:', err.message); }
-}
-
-app.post('/confirmation', async (req, res) => {
-  try {
-    const { orderNum, confirmations, photos, photo, signature, timestamp } = req.body;
-    if (!orderNum || !signature) return res.status(400).json({ error: 'Missing required fields' });
-    const photosArray = photos && photos.length > 0 ? photos : (photo ? [photo] : []);
-    if (photosArray.length === 0) return res.status(400).json({ error: 'Missing photo' });
-    const client = await serviceAuth.getClient();
-    const sheets = google.sheets({ version: 'v4', auth: client });
-    const docBuffer = await createConfirmationDocx(orderNum, confirmations, photosArray, signature, timestamp);
-    const docLink = await uploadFileToDrive(docBuffer, orderNum + '_אישור_קבלה.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    await ensureSheetExists(sheets, SHEET_ID, CONFIRMATIONS_SHEET_NAME);
-    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp||Date.now()).toLocaleString('he-IL'), orderNum, docLink, 'נשלח']] } });
-    await writeConfirmationLinkToOrders(sheets, orderNum, docLink);
-    res.json({ success: true, pdfLink: docLink });
-  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
-});
-
-// ── Upload Zoho Invoice to Drive + Sheets ─────────────────────────────────────
-app.post('/api/upload-zoho-invoice', async (req, res) => {
-  try {
-    const { invoiceNumber } = req.body;
-    if (!invoiceNumber) return res.status(400).json({ error: 'Missing invoiceNumber' });
-
-    // Find invoice in Zoho by invoice number
-    const search = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
-    if (!search.invoices || search.invoices.length === 0) return res.status(404).json({ error: 'חשבונית לא נמצאה ב-Zoho: ' + invoiceNumber });
-
-    const invoice = search.invoices[0];
-    const invoiceId = invoice.invoice_id;
-    const amount = parseFloat(invoice.total || 0);
-    const date = invoice.date || new Date().toLocaleDateString('he-IL');
-    const referenceNum = invoice.reference_number || '';
-
-    // Download PDF from Zoho
-    const pdfBuffer = await downloadZohoPdf(invoiceId);
-
-    // Upload to Drive in correct month folder
-    const driveLink = await uploadIncomePdf(pdfBuffer, invoiceNumber, date);
-
-    // Add row to income sheet
-    await addIncomeSheetRow(date, amount, driveLink, invoiceNumber, referenceNum);
-
-    console.log('✅ Invoice uploaded:', invoiceNumber, '| Drive:', driveLink);
-    res.json({ success: true, driveLink });
-  } catch (err) {
-    console.error('upload-zoho-invoice error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.listen(PORT, () => console.log('Server running on port ' + PORT));
+load();
+</script>
+</body>
+</html>
