@@ -370,12 +370,15 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
     // Find invoice in Zoho — try multiple search methods
     let invoice = null;
     const search1 = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
+    console.log('Zoho search1:', JSON.stringify(search1).substring(0, 500));
     if (search1.invoices && search1.invoices.length > 0) {
       invoice = search1.invoices[0];
     } else {
       // Try searching all invoices and filter
       const search2 = await zohoApiGet('/invoices?per_page=200&sort_column=created_time&sort_order=D');
+      console.log('Zoho search2 count:', search2.invoices ? search2.invoices.length : 0);
       if (search2.invoices) {
+        console.log('First invoice numbers:', search2.invoices.slice(0,3).map(i=>i.invoice_number));
         invoice = search2.invoices.find(inv => inv.invoice_number === invoiceNumber);
       }
     }
