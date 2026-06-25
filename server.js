@@ -2,7 +2,7 @@ const express = require('express');
 const { google } = require('googleapis');
 const path = require('path');
 const https = require('https');
-const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, HeadingLevel, BorderStyle } = require('docx');
+const { Document, Packer, Paragraph, TextRun, ImageRun, AlignmentType, BorderStyle } = require('docx');
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -23,6 +23,8 @@ const CONFIRMATIONS_FOLDER_ID = process.env.CONFIRMATIONS_FOLDER_ID;
 const CONFIRMATIONS_SHEET_NAME = process.env.CONFIRMATIONS_SHEET_NAME || 'אישורי קבלה';
 const ORDERS_SHEET_NAME = process.env.ORDERS_SHEET_NAME || 'מעקב הזמנות';
 const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
+const INCOME_SHEET_ID = process.env.INCOME_SHEET_ID;
+const INCOME_FOLDER_ID = process.env.INCOME_FOLDER_ID;
 
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
@@ -31,62 +33,74 @@ let ZOHO_REFRESH_TOKEN = process.env.ZOHO_REFRESH_TOKEN || '';
 let zohoAccessToken = '';
 let zohoTokenExpiry = 0;
 
+const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
 app.get('/', (req, res) => res.send('Server is running ✅'));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/confirmation-form', (req, res) => res.sendFile(path.join(__dirname, 'confirmation-form.html')));
 
-// ── Zoho OAuth callback (one-time setup) ──────────────────────────────────────
+// ── Zoho OAuth callback ────────────────────────────────────────────────────────
 app.get('/zoho-callback', async (req, res) => {
   const code = req.query.code;
   if (!code) return res.send('No code received');
   try {
     const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
-      code,
-      client_id: ZOHO_CLIENT_ID,
-      client_secret: ZOHO_CLIENT_SECRET,
+      code, client_id: ZOHO_CLIENT_ID, client_secret: ZOHO_CLIENT_SECRET,
       redirect_uri: 'https://paypal-webhook-81m2.onrender.com/zoho-callback',
       grant_type: 'authorization_code'
     }).toString());
     ZOHO_REFRESH_TOKEN = result.refresh_token;
-    res.send(`
-      <h2>✅ Zoho connected!</h2>
-      <p>Refresh Token:</p>
-      <code style="word-break:break-all">${result.refresh_token}</code>
-      <p>Copy this token and add it to Render as <strong>ZOHO_REFRESH_TOKEN</strong></p>
-    `);
+    res.send(`<h2>✅ Zoho connected!</h2><p>Refresh Token:</p><code style="word-break:break-all">${result.refresh_token}</code><p>Copy this token and add it to Render as <strong>ZOHO_REFRESH_TOKEN</strong></p>`);
+  } catch (err) { res.send('Error: ' + err.message); }
+});
+
+// ── Zoho Webhook — fires when invoice is approved/paid ────────────────────────
+app.post('/zoho-webhook', async (req, res) => {
+  try {
+    const event = req.body;
+    const invoice = event.invoice || event.data && event.data.invoice;
+    if (!invoice) return res.json({ received: true });
+
+    const status = invoice.status || '';
+    if (status !== 'paid' && status !== 'sent') return res.json({ received: true, skipped: true });
+
+    const invoiceId = invoice.invoice_id;
+    const invoiceNum = invoice.invoice_number || '';
+    const amount = parseFloat(invoice.total || 0);
+    const date = invoice.date || new Date().toLocaleDateString('he-IL');
+    const referenceNum = invoice.reference_number || '';
+
+    // Download PDF from Zoho
+    const pdfBuffer = await downloadZohoPdf(invoiceId);
+
+    // Upload to Drive in correct month folder
+    const driveLink = await uploadIncomePdf(pdfBuffer, invoiceNum, date);
+
+    // Add row to income sheet
+    await addIncomeSheetRow(date, amount, driveLink, invoiceNum, referenceNum);
+
+    console.log('✅ Invoice processed:', invoiceNum, '| Drive:', driveLink);
+    res.json({ success: true });
   } catch (err) {
-    res.send('Error: ' + err.message);
+    console.error('Zoho webhook error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// ── Zoho helpers ──────────────────────────────────────────────────────────────
+// ── Zoho helpers ───────────────────────────────────────────────────────────────
 function zohoPost(url, body) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(url);
-    const options = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }
-    };
-    const req = https.request(options, r => {
-      let data = '';
-      r.on('data', d => data += d);
-      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
-    });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
+    const options = { hostname: urlObj.hostname, path: urlObj.pathname, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } };
+    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
+    req.on('error', reject); req.write(body); req.end();
   });
 }
 
 async function getZohoAccessToken() {
   if (zohoAccessToken && Date.now() < zohoTokenExpiry - 60000) return zohoAccessToken;
   const result = await zohoPost('https://accounts.zoho.com/oauth/v2/token', new URLSearchParams({
-    refresh_token: ZOHO_REFRESH_TOKEN,
-    client_id: ZOHO_CLIENT_ID,
-    client_secret: ZOHO_CLIENT_SECRET,
-    grant_type: 'refresh_token'
+    refresh_token: ZOHO_REFRESH_TOKEN, client_id: ZOHO_CLIENT_ID, client_secret: ZOHO_CLIENT_SECRET, grant_type: 'refresh_token'
   }).toString());
   if (!result.access_token) throw new Error('Failed to get Zoho token: ' + JSON.stringify(result));
   zohoAccessToken = result.access_token;
@@ -98,55 +112,33 @@ async function zohoApiPost(path, body) {
   const token = await getZohoAccessToken();
   const bodyStr = JSON.stringify(body);
   return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'invoice.zoho.com',
-      path: '/api/v3' + path,
-      method: 'POST',
-      headers: {
-        'Authorization': 'Zoho-oauthtoken ' + token,
-        'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID,
-        'Content-Type': 'application/json;charset=UTF-8',
-        'Content-Length': Buffer.byteLength(bodyStr)
-      }
-    };
-    const req = https.request(options, r => {
-      let data = '';
-      r.on('data', d => data += d);
-      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
-    });
-    req.on('error', reject);
-    req.write(bodyStr);
-    req.end();
+    const options = { hostname: 'invoice.zoho.com', path: '/api/v3' + path, method: 'POST', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID, 'Content-Type': 'application/json;charset=UTF-8', 'Content-Length': Buffer.byteLength(bodyStr) } };
+    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
+    req.on('error', reject); req.write(bodyStr); req.end();
   });
 }
 
-async function zohoApiGet(path) {
+async function zohoApiGet(apiPath) {
   const token = await getZohoAccessToken();
   return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'invoice.zoho.com',
-      path: '/api/v3' + path,
-      method: 'GET',
-      headers: {
-        'Authorization': 'Zoho-oauthtoken ' + token,
-        'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID
-      }
-    };
-    const req = https.request(options, r => {
-      let data = '';
-      r.on('data', d => data += d);
-      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } });
-    });
-    req.on('error', reject);
-    req.end();
+    const options = { hostname: 'invoice.zoho.com', path: '/api/v3' + apiPath, method: 'GET', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID } };
+    const req = https.request(options, r => { let data = ''; r.on('data', d => data += d); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(new Error(data)); } }); });
+    req.on('error', reject); req.end();
+  });
+}
+
+async function downloadZohoPdf(invoiceId) {
+  const token = await getZohoAccessToken();
+  return new Promise((resolve, reject) => {
+    const options = { hostname: 'invoice.zoho.com', path: `/api/v3/invoices/${invoiceId}?accept=pdf`, method: 'GET', headers: { 'Authorization': 'Zoho-oauthtoken ' + token, 'X-com-zoho-invoice-organizationid': ZOHO_ORG_ID } };
+    const req = https.request(options, r => { const chunks = []; r.on('data', d => chunks.push(d)); r.on('end', () => resolve(Buffer.concat(chunks))); });
+    req.on('error', reject); req.end();
   });
 }
 
 async function getOrCreateZohoContact(name) {
-  // Search for existing contact
   const search = await zohoApiGet('/contacts?contact_name=' + encodeURIComponent(name));
   if (search.contacts && search.contacts.length > 0) return search.contacts[0].contact_id;
-  // Create new contact
   const result = await zohoApiPost('/contacts', { contact_name: name, contact_type: 'customer' });
   if (result.contact) return result.contact.contact_id;
   throw new Error('Failed to create contact: ' + JSON.stringify(result));
@@ -154,18 +146,55 @@ async function getOrCreateZohoContact(name) {
 
 async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD) {
   const contactId = await getOrCreateZohoContact(customerName);
-  const result = await zohoApiPost('/invoices', {
-    customer_id: contactId,
-    reference_number: String(orderNum),
-    status: 'draft',
-    line_items: [{
-      name: itemName || 'מוצר',
-      quantity: 1,
-      rate: parseFloat(amountUSD) || 0
-    }]
-  });
+  const result = await zohoApiPost('/invoices', { customer_id: contactId, reference_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'מוצר', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
   if (result.invoice) return result.invoice;
   throw new Error('Failed to create invoice: ' + JSON.stringify(result));
+}
+
+// ── Drive/Sheets income helpers ────────────────────────────────────────────────
+async function getOrCreateMonthFolder(drive, dateStr) {
+  const date = dateStr ? new Date(dateStr) : new Date();
+  const monthName = HEBREW_MONTHS[date.getMonth()];
+  const year = date.getFullYear();
+  const folderName = `${monthName} ${year}`;
+
+  const searchRes = await drive.files.list({ q: `'${INCOME_FOLDER_ID}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, fields: 'files(id)' });
+  if (searchRes.data.files.length > 0) return searchRes.data.files[0].id;
+
+  const newFolder = await drive.files.create({ requestBody: { name: folderName, parents: [INCOME_FOLDER_ID], mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
+  return newFolder.data.id;
+}
+
+async function uploadIncomePdf(pdfBuffer, invoiceNum, dateStr) {
+  const { Readable } = require('stream');
+  const drive = google.drive({ version: 'v3', auth: oauthClient });
+  const folderId = await getOrCreateMonthFolder(drive, dateStr);
+  const fileName = `Invoice-${invoiceNum}.pdf`;
+  const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId], mimeType: 'application/pdf' }, media: { mimeType: 'application/pdf', body: Readable.from(pdfBuffer) }, fields: 'id, webViewLink' });
+  await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
+  return file.data.webViewLink;
+}
+
+async function getOrCreateMonthSheet(sheets, dateStr) {
+  const date = dateStr ? new Date(dateStr) : new Date();
+  const monthName = HEBREW_MONTHS[date.getMonth()];
+  const year = date.getFullYear();
+  const sheetName = `${monthName} ${year}`;
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: INCOME_SHEET_ID });
+  const existing = meta.data.sheets.find(s => s.properties.title === sheetName);
+  if (existing) return sheetName;
+
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: INCOME_SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
+  await sheets.spreadsheets.values.update({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A1:E1', valueInputOption: 'RAW', requestBody: { values: [['תאריך', 'סכום', 'קישור לחשבונית', '', 'מספר חשבונית']] } });
+  return sheetName;
+}
+
+async function addIncomeSheetRow(dateStr, amount, driveLink, invoiceNum, referenceNum) {
+  const client = await serviceAuth.getClient();
+  const sheets = google.sheets({ version: 'v4', auth: client });
+  const sheetName = await getOrCreateMonthSheet(sheets, dateStr);
+  await sheets.spreadsheets.values.append({ spreadsheetId: INCOME_SHEET_ID, range: sheetName + '!A:E', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[dateStr, amount, driveLink, '', invoiceNum]] } });
 }
 
 // ── PayPal Webhook ─────────────────────────────────────────────────────────────
@@ -173,35 +202,25 @@ app.post('/webhook', async (req, res) => {
   try {
     const event = req.body;
     const eventType = event.event_type || '';
-    if (!eventType.includes('PAYMENT') && !eventType.includes('SALE') && !eventType.includes('CAPTURE')) {
-      return res.json({ received: true });
-    }
+    if (!eventType.includes('PAYMENT') && !eventType.includes('SALE') && !eventType.includes('CAPTURE')) return res.json({ received: true });
 
     const resource = event.resource || {};
-    const amountILS = parseFloat((resource.amount && resource.amount.total) || resource.gross_amount && resource.gross_amount.value || 0);
     const amountUSD = parseFloat((resource.seller_receivable_breakdown && resource.seller_receivable_breakdown.net_amount && resource.seller_receivable_breakdown.net_amount.value) || 0);
-    const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) ||
-                         (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
+    const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
     const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
     const itemName = (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].items && resource.purchase_units[0].items[0] && resource.purchase_units[0].items[0].name) || 'מוצר';
 
     console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
 
-    // Create Zoho Draft Invoice if refresh token is set
     if (ZOHO_REFRESH_TOKEN && orderNum) {
       try {
         const invoice = await createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD);
         console.log('✅ Zoho draft invoice created:', invoice.invoice_number);
-      } catch (zohoErr) {
-        console.error('Zoho error (non-fatal):', zohoErr.message);
-      }
+      } catch (zohoErr) { console.error('Zoho error (non-fatal):', zohoErr.message); }
     }
 
     res.json({ received: true });
-  } catch (err) {
-    console.error('Webhook error:', err);
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { console.error('Webhook error:', err); res.status(500).json({ error: err.message }); }
 });
 
 function isChecked(val) {
@@ -218,31 +237,8 @@ app.get('/api/crm-data', async (req, res) => {
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' }),
       sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:E' })
     ]);
-    const orderRows = (ordersResp.data.values || []).slice(1);
-    const serviceRows = (serviceResp.data.values || []).slice(1);
-    const orders = orderRows
-      .filter(r => r[0] && String(r[0]).trim())
-      .map(r => ({
-        orderNum: r[0] || '',
-        orderDate: r[1] || '',
-        invoiceLink: r[2] || '',
-        city: r[3] || '',
-        cost: r[4] || '',
-        immediate: r[5] || '',
-        supplied: r[6] || '',
-        deliveryDate: r[7] || '',
-        notes: r[8] || '',
-        confirmationLink: r[9] || ''
-      }));
-    const service = serviceRows
-      .filter(r => r[0] && String(r[0]).trim())
-      .map(r => ({
-        orderNum: r[0] || '',
-        requestDate: r[1] || '',
-        fixed: r[2] || '',
-        fixDate: r[3] || '',
-        notes: r[4] || ''
-      }));
+    const orders = (ordersResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', orderDate: r[1]||'', invoiceLink: r[2]||'', city: r[3]||'', cost: r[4]||'', immediate: r[5]||'', supplied: r[6]||'', deliveryDate: r[7]||'', notes: r[8]||'', confirmationLink: r[9]||'' }));
+    const service = (serviceResp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim()).map(r => ({ orderNum: r[0]||'', requestDate: r[1]||'', fixed: r[2]||'', fixDate: r[3]||'', notes: r[4]||'' }));
     res.json({ orders, service });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
@@ -254,8 +250,7 @@ app.get('/api/check-duplicate', async (req, res) => {
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!B:B' });
-    const rows = resp.data.values || [];
-    const exists = rows.some(row => String(row[0] || '').trim() === orderNum);
+    const exists = (resp.data.values || []).some(row => String(row[0] || '').trim() === orderNum);
     res.json({ isDuplicate: exists });
   } catch (err) { console.error('check-duplicate error:', err); res.json({ isDuplicate: false }); }
 });
@@ -269,21 +264,12 @@ app.get('/api/dashboard-data', async (req, res) => {
     let openOrders = 0, sumOpen = 0;
     const costByOrderNum = {};
     orderRows.forEach(row => {
-      const orderNum = row[0];
-      const cost = parseFloat(String(row[4] || '').replace(/[^0-9.]/g, '')) || 0;
-      const gVal = row[6];
-      if (orderNum) {
-        costByOrderNum[String(orderNum).trim()] = cost;
-        if (!isChecked(gVal)) { openOrders++; sumOpen += cost; }
-      }
+      const orderNum = row[0]; const cost = parseFloat(String(row[4]||'').replace(/[^0-9.]/g,''))||0; const gVal = row[6];
+      if (orderNum) { costByOrderNum[String(orderNum).trim()] = cost; if (!isChecked(gVal)) { openOrders++; sumOpen += cost; } }
     });
     const serviceResp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: SERVICE_SHEET_NAME + '!A:C' });
-    const serviceRows = (serviceResp.data.values || []).slice(1);
     let openService = 0, serviceSum = 0;
-    serviceRows.forEach(row => {
-      const orderNum = row[0];
-      if (orderNum && !isChecked(row[2])) { openService++; serviceSum += costByOrderNum[String(orderNum).trim()] || 0; }
-    });
+    (serviceResp.data.values || []).slice(1).forEach(row => { if (row[0] && !isChecked(row[2])) { openService++; serviceSum += costByOrderNum[String(row[0]).trim()]||0; } });
     res.json({ openOrders, sumOpen, openService, serviceSum, updatedAt: new Date().toLocaleString('he-IL') });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
@@ -295,10 +281,7 @@ function base64ToBuffer(base64Data) {
 }
 
 function dividerParagraph() {
-  return new Paragraph({
-    border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC', space: 1 } },
-    spacing: { after: 200 }
-  });
+  return new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: 'CCCCCC', space: 1 } }, spacing: { after: 200 } });
 }
 
 async function createConfirmationDocx(orderNum, confirmations, photosBase64, signatureBase64, timestamp) {
@@ -351,9 +334,7 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:A' });
     const rows = resp.data.values || [];
     let targetRow = -1;
-    for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0] || '').trim() === String(orderNum).trim()) { targetRow = i + 1; break; }
-    }
+    for (let i = 1; i < rows.length; i++) { if (String(rows[i][0]||'').trim() === String(orderNum).trim()) { targetRow = i + 1; break; } }
     if (targetRow === -1) { console.log('Order not found:', orderNum); return; }
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!J' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[docLink]] } });
   } catch (err) { console.error('Failed to write link:', err.message); }
@@ -370,7 +351,7 @@ app.post('/confirmation', async (req, res) => {
     const docBuffer = await createConfirmationDocx(orderNum, confirmations, photosArray, signature, timestamp);
     const docLink = await uploadFileToDrive(docBuffer, orderNum + '_אישור_קבלה.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     await ensureSheetExists(sheets, SHEET_ID, CONFIRMATIONS_SHEET_NAME);
-    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp || Date.now()).toLocaleString('he-IL'), orderNum, docLink, 'נשלח']] } });
+    await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: CONFIRMATIONS_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[new Date(timestamp||Date.now()).toLocaleString('he-IL'), orderNum, docLink, 'נשלח']] } });
     await writeConfirmationLinkToOrders(sheets, orderNum, docLink);
     res.json({ success: true, pdfLink: docLink });
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
