@@ -360,14 +360,27 @@ app.post('/confirmation', async (req, res) => {
 // ── Upload Zoho Invoice to Drive + Sheets ─────────────────────────────────────
 app.post('/api/upload-zoho-invoice', async (req, res) => {
   try {
-    const { invoiceNumber } = req.body;
+    let { invoiceNumber } = req.body;
     if (!invoiceNumber) return res.status(400).json({ error: 'Missing invoiceNumber' });
 
-    // Find invoice in Zoho by invoice number
-    const search = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
-    if (!search.invoices || search.invoices.length === 0) return res.status(404).json({ error: 'חשבונית לא נמצאה ב-Zoho: ' + invoiceNumber });
+    // Auto-add INV- prefix if only numbers provided
+    invoiceNumber = invoiceNumber.trim();
+    if (/^\d+$/.test(invoiceNumber)) invoiceNumber = 'INV-' + invoiceNumber;
 
-    const invoice = search.invoices[0];
+    // Find invoice in Zoho — try multiple search methods
+    let invoice = null;
+    const search1 = await zohoApiGet('/invoices?invoice_number=' + encodeURIComponent(invoiceNumber));
+    if (search1.invoices && search1.invoices.length > 0) {
+      invoice = search1.invoices[0];
+    } else {
+      // Try searching all invoices and filter
+      const search2 = await zohoApiGet('/invoices?per_page=200&sort_column=created_time&sort_order=D');
+      if (search2.invoices) {
+        invoice = search2.invoices.find(inv => inv.invoice_number === invoiceNumber);
+      }
+    }
+    if (!invoice) return res.status(404).json({ error: 'חשבונית לא נמצאה ב-Zoho: ' + invoiceNumber });
+
     const invoiceId = invoice.invoice_id;
     const amount = parseFloat(invoice.total || 0);
     const date = invoice.date || new Date().toLocaleDateString('he-IL');
