@@ -373,17 +373,17 @@ app.post('/api/upload-zoho-invoice', async (req, res) => {
     if (/^\d+$/.test(invoiceNumber)) invoiceNumber = 'INV-' + invoiceNumber;
 
 
-    // Check for duplicate in income sheet
+    // Check for duplicate across ALL sheets in income spreadsheet
     try {
       const clientCheck = await serviceAuth.getClient();
       const sheetsCheck = google.sheets({ version: 'v4', auth: clientCheck });
-      const monthNamesD = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
-      const nowD = new Date();
-      const sheetNameD = monthNamesD[nowD.getMonth()] + ' ' + nowD.getFullYear();
-      const dupCheck = await sheetsCheck.spreadsheets.values.get({ spreadsheetId: INCOME_SHEET_ID, range: sheetNameD + '!E:E' }).catch(() => null);
-      if (dupCheck && dupCheck.data.values) {
-        const exists = dupCheck.data.values.some(row => String(row[0] || '').trim() === invoiceNumber);
-        if (exists) return res.status(400).json({ error: 'חשבונית ' + invoiceNumber + ' כבר קיימת ב-Excel. למחיקה — מחק את השורה ישירות בגיליון.' });
+      const meta = await sheetsCheck.spreadsheets.get({ spreadsheetId: INCOME_SHEET_ID });
+      for (const sheet of meta.data.sheets) {
+        const dupCheck = await sheetsCheck.spreadsheets.values.get({ spreadsheetId: INCOME_SHEET_ID, range: sheet.properties.title + '!D:D' }).catch(() => null);
+        if (dupCheck && dupCheck.data.values) {
+          const exists = dupCheck.data.values.some(row => String(row[0] || '').trim() === invoiceNumber);
+          if (exists) return res.status(400).json({ error: 'חשבונית ' + invoiceNumber + ' כבר קיימת ב-Excel. למחיקה — מחק את השורה ישירות בגיליון.' });
+        }
       }
     } catch (dupErr) { console.log('Duplicate check skipped:', dupErr.message); }
     // Find invoice in Zoho — try multiple search methods
