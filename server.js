@@ -205,7 +205,8 @@ app.post('/webhook', async (req, res) => {
     if (!eventType.includes('PAYMENT') && !eventType.includes('SALE') && !eventType.includes('CAPTURE')) return res.json({ received: true });
 
     const resource = event.resource || {};
-    const amountUSD = parseFloat((resource.seller_receivable_breakdown && resource.seller_receivable_breakdown.net_amount && resource.seller_receivable_breakdown.net_amount.value) || 0);
+    const breakdown = resource.seller_receivable_breakdown || {};
+    const amountUSD = parseFloat((breakdown.receivable_amount && breakdown.receivable_amount.value) || (breakdown.net_amount && breakdown.net_amount.currency_code === 'USD' && breakdown.net_amount.value) || (breakdown.net_amount && breakdown.net_amount.value) || 0);
     const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
     const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
     const itemName = (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].items && resource.purchase_units[0].items[0] && resource.purchase_units[0].items[0].name) || 'מוצר';
