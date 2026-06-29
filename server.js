@@ -145,8 +145,14 @@ async function getOrCreateZohoContact(name) {
 }
 
 async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD) {
+  // Check if draft already exists for this order
+  const existing = await zohoApiGet('/invoices?reference_number=' + encodeURIComponent(String(orderNum)));
+  if (existing.invoices && existing.invoices.length > 0) {
+    console.log('Draft already exists for order', orderNum);
+    return existing.invoices[0];
+  }
   const contactId = await getOrCreateZohoContact(customerName);
-  const result = await zohoApiPost('/invoices', { customer_id: contactId, reference_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'מוצר', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
+  const result = await zohoApiPost('/invoices', { customer_id: contactId, po_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'Beds marketing', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
   if (result.invoice) return result.invoice;
   throw new Error('Failed to create invoice: ' + JSON.stringify(result));
 }
@@ -207,9 +213,11 @@ app.post('/webhook', async (req, res) => {
     const resource = event.resource || {};
     const breakdown = resource.seller_receivable_breakdown || {};
     const amountUSD = parseFloat((breakdown.receivable_amount && breakdown.receivable_amount.value) || (breakdown.net_amount && breakdown.net_amount.currency_code === 'USD' && breakdown.net_amount.value) || (breakdown.net_amount && breakdown.net_amount.value) || 0);
-    const customerName = (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || 'לקוח';
+    const payerEmail = (resource.payer && resource.payer.email_address) || '';
+    const payerName = (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || '';
+    const customerName = payerName || payerEmail || ('Customer-' + orderNum);
     const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
-    const itemName = (resource.purchase_units && resource.purchase_units[0] && resource.purchase_units[0].items && resource.purchase_units[0].items[0] && resource.purchase_units[0].items[0].name) || 'מוצר';
+    const itemName = 'Beds marketing';
 
     console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
 
