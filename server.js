@@ -213,10 +213,10 @@ app.post('/webhook', async (req, res) => {
     const resource = event.resource || {};
     const breakdown = resource.seller_receivable_breakdown || {};
     const amountUSD = parseFloat((breakdown.receivable_amount && breakdown.receivable_amount.value) || (breakdown.net_amount && breakdown.net_amount.currency_code === 'USD' && breakdown.net_amount.value) || (breakdown.net_amount && breakdown.net_amount.value) || 0);
+    const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
     const payerEmail = (resource.payer && resource.payer.email_address) || '';
     const payerName = (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || '';
     const customerName = payerName || payerEmail || ('Customer-' + orderNum);
-    const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
     const itemName = 'Beds marketing';
 
     console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
