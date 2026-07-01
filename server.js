@@ -145,14 +145,17 @@ async function getOrCreateZohoContact(name) {
 }
 
 async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUSD) {
-  // Check if draft already exists for this order
-  const existing = await zohoApiGet('/invoices?reference_number=' + encodeURIComponent(String(orderNum)));
-  if (existing.invoices && existing.invoices.length > 0) {
-    console.log('Draft already exists for order', orderNum);
-    return existing.invoices[0];
+  // Check if draft already exists by po_number
+  const existing = await zohoApiGet('/invoices?per_page=200&sort_column=created_time&sort_order=D');
+  if (existing.invoices) {
+    const dup = existing.invoices.find(inv => inv.po_number === String(orderNum) || inv.reference_number === String(orderNum));
+    if (dup) {
+      console.log('Draft already exists for order', orderNum, ':', dup.invoice_number);
+      return dup;
+    }
   }
   const contactId = await getOrCreateZohoContact(customerName);
-  const result = await zohoApiPost('/invoices', { customer_id: contactId, po_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'Beds marketing', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
+  const result = await zohoApiPost('/invoices', { customer_id: contactId, po_number: String(orderNum), reference_number: String(orderNum), status: 'draft', line_items: [{ name: itemName || 'Beds marketing', quantity: 1, rate: parseFloat(amountUSD) || 0 }] });
   if (result.invoice) return result.invoice;
   throw new Error('Failed to create invoice: ' + JSON.stringify(result));
 }
@@ -215,8 +218,10 @@ app.post('/webhook', async (req, res) => {
     const amountUSD = parseFloat((breakdown.receivable_amount && breakdown.receivable_amount.value) || (breakdown.net_amount && breakdown.net_amount.currency_code === 'USD' && breakdown.net_amount.value) || (breakdown.net_amount && breakdown.net_amount.value) || 0);
     const orderNum = resource.custom_id || resource.invoice_id || resource.id || '';
     const payerEmail = (resource.payer && resource.payer.email_address) || '';
-    const payerName = (resource.payer && resource.payer.name && (resource.payer.name.given_name + ' ' + resource.payer.name.surname)) || (resource.payer_name && (resource.payer_name.given_name + ' ' + resource.payer_name.surname)) || '';
-    const customerName = payerName || payerEmail || ('Customer-' + orderNum);
+    const payerGiven = (resource.payer && resource.payer.name && resource.payer.name.given_name) || (resource.payer_name && resource.payer_name.given_name) || '';
+    const payerSurname = (resource.payer && resource.payer.name && resource.payer.name.surname) || (resource.payer_name && resource.payer_name.surname) || '';
+    const payerFullName = (payerGiven + ' ' + payerSurname).trim();
+    const customerName = payerFullName || payerEmail || ('Customer-' + orderNum);
     const itemName = 'Beds marketing';
 
     console.log('PayPal event:', eventType, '| Order:', orderNum, '| Customer:', customerName, '| USD:', amountUSD);
