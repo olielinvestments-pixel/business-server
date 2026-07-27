@@ -62,6 +62,13 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .notes-badge{font-size:11px;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:5px 8px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .empty{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px}
 .updated{font-size:11px;color:#9ca3af;text-align:center;padding:8px}
+.login-gate{position:fixed;inset:0;background:#f4f5f7;display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.login-box{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:28px 24px;width:100%;max-width:320px;text-align:center}
+.login-box h2{font-size:16px;margin-bottom:16px;color:#111}
+.login-box input{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;margin-bottom:10px;direction:ltr;text-align:center}
+.login-box input:focus{border-color:#93c5fd}
+.login-box button{width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}
+.login-box .err{color:#dc2626;font-size:12px;margin-top:8px;min-height:14px}
 @media(min-width:640px){
 .stats{grid-template-columns:repeat(4,1fr)}
 .cards{display:grid;grid-template-columns:repeat(2,1fr)}
@@ -69,6 +76,14 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 </style>
 </head>
 <body>
+<div class="login-gate" id="login-gate">
+<div class="login-box">
+<h2>🔒 כניסה לדשבורד</h2>
+<input type="password" id="login-pass" placeholder="סיסמה" onkeydown="if(event.key==='Enter')doLogin()">
+<button onclick="doLogin()">כניסה</button>
+<div class="err" id="login-err"></div>
+</div>
+</div>
 <div class="top">
 <h1>דשבורד עסקי</h1>
 <button class="refresh-btn" onclick="load()">&#8635; רענן</button>
@@ -79,6 +94,7 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 <div class="stat"><div class="stat-label">דחופות</div><div class="stat-val red" id="s-urgent">-</div></div>
 <div class="stat"><div class="stat-label">שירות פתוח</div><div class="stat-val amber" id="s-service">-</div></div>
 <div class="stat"><div class="stat-label">סה"כ פתוח (₪)</div><div class="stat-val green" id="s-sum">-</div></div>
+<div class="stat"><div class="stat-label">הוצאות החודש (₪)</div><div class="stat-val red" id="s-expenses">-</div></div>
 </div>
 
 <!-- Zoho Invoice Upload Panel -->
@@ -103,6 +119,7 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 <div class="tab" onclick="setTab('done',this)">סופק <span class="cnt" id="c-done">0</span></div>
 <div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="cnt" id="c-service">0</span></div>
 <div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="cnt" id="c-service-done">0</span></div>
+<div class="tab" onclick="setTab('expenses',this)">הוצאות <span class="cnt" id="c-expenses">0</span></div>
 </div>
 
 <div class="cards" id="cards"></div>
@@ -110,8 +127,46 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 </div>
 
 <script>
-let allData={orders:[],service:[]};
+let allData={orders:[],service:[],expenses:[]};
 let currentTab='all';
+
+// ── התחברות מנהל ─────────────────────────────────────────────────────────────
+function authHeaders(){
+return {'x-admin-password':localStorage.getItem('adminPassword')||''};
+}
+
+async function authedFetch(url,opts){
+opts=opts||{};
+opts.headers=Object.assign({},opts.headers||{},authHeaders());
+const r=await fetch(url,opts);
+if(r.status===401){
+showLoginGate('הסיסמה שגויה, נסה שוב');
+throw new Error('לא מורשה');
+}
+return r;
+}
+
+function showLoginGate(err){
+document.getElementById('login-gate').style.display='flex';
+document.getElementById('login-err').textContent=err||'';
+}
+
+async function doLogin(){
+const pass=document.getElementById('login-pass').value;
+const errEl=document.getElementById('login-err');
+errEl.textContent='';
+try{
+const r=await fetch('/api/admin-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})});
+const d=await r.json();
+if(d.ok){
+localStorage.setItem('adminPassword',pass);
+document.getElementById('login-gate').style.display='none';
+load();
+}else{
+errEl.textContent=d.error||'סיסמה שגויה';
+}
+}catch(e){errEl.textContent='שגיאת חיבור: '+e.message;}
+}
 
 async function uploadZohoInvoice(){
 const invNum=document.getElementById('zoho-inv-num').value.trim();
@@ -126,7 +181,7 @@ statusEl.className='invoice-status loading';
 statusEl.textContent='מוריד חשבונית מ-Zoho ומעלה...';
 btn.disabled=true;
 try{
-const r=await fetch('/api/upload-zoho-invoice',{
+const r=await authedFetch('/api/upload-zoho-invoice',{
 method:'POST',
 headers:{'Content-Type':'application/json'},
 body:JSON.stringify({invoiceNumber:invNum})
@@ -234,11 +289,31 @@ ${r.notes?`<div class="notes-badge">📝 ${r.notes}</div>`:''}
 </div>`;
 }
 
+function renderExpenseCard(r){
+return `<div class="card">
+<div class="card-header">
+<span class="card-num">${fmtDate(r.date)}</span>
+</div>
+<div class="card-grid">
+<div><div class="field-label">סכום</div><div class="field-val">${fmtMoney(r.amount)}</div></div>
+</div>
+<div class="card-footer">
+${linkBtn(r.receiptLink,'🧾','קבלה')}
+</div>
+</div>`;
+}
+
 function render(){
 const q=document.getElementById('search').value.trim().toLowerCase();
 const isSvc=currentTab==='service'||currentTab==='service-done';
+const isExp=currentTab==='expenses';
 let rows=[];
-if(isSvc){
+if(isExp){
+rows=allData.expenses.filter(r=>{
+if(q){const h=[r.supplier,r.description,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
+return true;
+});
+}else if(isSvc){
 rows=allData.service.filter(r=>{
 const fixed=isChecked(r.fixed);
 if(currentTab==='service'&&fixed)return false;
@@ -260,13 +335,13 @@ const container=document.getElementById('cards');
 if(rows.length===0){
 container.innerHTML='<div class="empty">אין רשומות</div>';
 }else{
-container.innerHTML=rows.map(r=>isSvc?renderServiceCard(r):renderOrderCard(r)).join('');
+container.innerHTML=rows.map(r=>isExp?renderExpenseCard(r):(isSvc?renderServiceCard(r):renderOrderCard(r))).join('');
 }
 updateCounts();
 }
 
 function updateCounts(){
-const o=allData.orders,s=allData.service;
+const o=allData.orders,s=allData.service,ex=allData.expenses||[];
 const q=document.getElementById('search').value.trim().toLowerCase();
 const fo=fn=>o.filter(r=>{
 if(q){const h=[r.orderNum,r.city,r.notes].join(' ').toLowerCase();if(!h.includes(q))return false;}
@@ -278,22 +353,30 @@ document.getElementById('c-urgent').textContent=fo(r=>getStatus(r)==='urgent').l
 document.getElementById('c-done').textContent=fo(r=>getStatus(r)==='done').length;
 document.getElementById('c-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
 document.getElementById('c-service-done').textContent=s.filter(r=>isChecked(r.fixed)).length;
+document.getElementById('c-expenses').textContent=ex.length;
 const open=o.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
 document.getElementById('s-open').textContent=open.length;
 document.getElementById('s-urgent').textContent=o.filter(r=>getStatus(r)==='urgent').length;
 document.getElementById('s-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
 const total=open.reduce((sum,r)=>sum+(parseFloat(String(r.cost||'').replace(/[^0-9.]/g,''))||0),0);
 document.getElementById('s-sum').textContent='₪'+Math.round(total).toLocaleString();
+const now=new Date();
+const thisMonthTotal=ex.filter(r=>{
+const d=new Date(r.date.split('/').reverse().join('-'));
+return !isNaN(d)&&d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+}).reduce((sum,r)=>sum+(parseFloat(String(r.amount||'').replace(/[^0-9.]/g,''))||0),0);
+document.getElementById('s-expenses').textContent='₪'+Math.round(thisMonthTotal).toLocaleString();
 }
 
 async function load(){
 document.getElementById('updated').textContent='טוען...';
 try{
-const r=await fetch('/api/crm-data');
+const [r,rExp]=await Promise.all([authedFetch('/api/crm-data'),authedFetch('/api/expenses-data')]);
 if(!r.ok)throw new Error('שגיאת שרת '+r.status);
 const d=await r.json();
 if(d.error)throw new Error(d.error);
-allData=d;
+const dExp=rExp.ok?await rExp.json():{expenses:[]};
+allData={orders:d.orders,service:d.service,expenses:dExp.expenses||[]};
 render();
 document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
 }catch(e){
@@ -301,7 +384,12 @@ document.getElementById('updated').textContent='שגיאה: '+e.message;
 }
 }
 
+if(localStorage.getItem('adminPassword')){
+document.getElementById('login-gate').style.display='none';
 load();
+}else{
+showLoginGate('');
+}
 </script>
 </body>
 </html>
