@@ -26,6 +26,18 @@ const SERVICE_SHEET_NAME = process.env.SERVICE_SHEET_NAME || 'שירות';
 const INCOME_SHEET_ID = process.env.INCOME_SHEET_ID;
 const INCOME_FOLDER_ID = process.env.INCOME_FOLDER_ID;
 
+// ── מודל הוצאות + עובדים ────────────────────────────────────────────────────
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+// ה-Sheet שבו האפליקציה הנפרדת "חשבוניות" כבר רושמת הוצאות (לשונית לפי חודש: תאריך, סכום, קישור לחשבונית)
+// חייב להיות משותף (Share) עם חשבון השירות כדי שהשרת יוכל לקרוא ממנו
+const EXPENSE_SHEET_ID = process.env.EXPENSE_SHEET_ID || '1MNtox_xMhk_KTvC7KRH5niS2FopwHS-eJmbGMHIZY_0';
+const EMPLOYEES_SHEET_NAME = process.env.EMPLOYEES_SHEET_NAME || 'עובדים';
+const EMPLOYEE_HOURS_SHEET_NAME = process.env.EMPLOYEE_HOURS_SHEET_NAME || 'שעות ותשלומים';
+const EMPLOYEE_RECEIPTS_FOLDER_ID = process.env.EMPLOYEE_RECEIPTS_FOLDER_ID || process.env.CONFIRMATIONS_FOLDER_ID;
+
+const EMPLOYEES_HEADERS = ['שם עובד', 'סיסמה', 'טלפון', 'הערות'];
+const EMPLOYEE_HOURS_HEADERS = ['שם עובד', 'חודש', 'שעות', 'עמלות ממכירה', 'תשלום ששולם', 'תאריך תשלום', 'קישור לקבלה', 'הערות'];
+
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
 const ZOHO_CLIENT_SECRET = process.env.ZOHO_CLIENT_SECRET;
 const ZOHO_ORG_ID = process.env.ZOHO_ORG_ID;
@@ -38,6 +50,22 @@ const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי
 app.get('/', (req, res) => res.send('Server is running ✅'));
 app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/confirmation-form', (req, res) => res.sendFile(path.join(__dirname, 'confirmation-form.html')));
+app.get('/employee', (req, res) => res.sendFile(path.join(__dirname, 'employee.html')));
+
+// ── אימות מנהל (לדשבורד העסקי) ─────────────────────────────────────────────────
+function requireAdmin(req, res, next) {
+  if (!ADMIN_PASSWORD) return next(); // אם לא הוגדרה סיסמה ב-env - לא חוסמים (תאימות לאחור)
+  const pass = req.headers['x-admin-password'] || req.query.adminPassword;
+  if (pass !== ADMIN_PASSWORD) return res.status(401).json({ error: 'לא מורשה' });
+  next();
+}
+
+app.post('/api/admin-login', (req, res) => {
+  const { password } = req.body || {};
+  if (!ADMIN_PASSWORD) return res.json({ ok: true });
+  if (password === ADMIN_PASSWORD) return res.json({ ok: true });
+  res.status(401).json({ ok: false, error: 'סיסמה שגויה' });
+});
 
 // ── Zoho OAuth callback ────────────────────────────────────────────────────────
 app.get('/zoho-callback', async (req, res) => {
@@ -161,23 +189,25 @@ async function createZohoDraftInvoice(orderNum, customerName, itemName, amountUS
 }
 
 // ── Drive/Sheets income helpers ────────────────────────────────────────────────
-async function getOrCreateMonthFolder(drive, dateStr) {
+// שם תיקיית חודש בפורמט אחיד ("יולי 2026") - משמש גם להכנסות וגם לקבלות עובדים
+function monthFolderName(dateStr) {
   const date = dateStr ? new Date(dateStr) : new Date();
-  const monthName = HEBREW_MONTHS[date.getMonth()];
-  const year = date.getFullYear();
-  const folderName = `${monthName} ${year}`;
+  return `${HEBREW_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
 
-  const searchRes = await drive.files.list({ q: `'${INCOME_FOLDER_ID}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, fields: 'files(id)' });
+// יוצר/מאתר תיקיית-משנה לפי שם, בתוך תיקיית-אב נתונה - גנרי, לשימוש חוזר
+async function getOrCreateMonthFolder(drive, parentFolderId, folderName) {
+  const searchRes = await drive.files.list({ q: `'${parentFolderId}' in parents and name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`, fields: 'files(id)' });
   if (searchRes.data.files.length > 0) return searchRes.data.files[0].id;
 
-  const newFolder = await drive.files.create({ requestBody: { name: folderName, parents: [INCOME_FOLDER_ID], mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
+  const newFolder = await drive.files.create({ requestBody: { name: folderName, parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' }, fields: 'id' });
   return newFolder.data.id;
 }
 
 async function uploadIncomePdf(pdfBuffer, invoiceNum, dateStr) {
   const { Readable } = require('stream');
   const drive = google.drive({ version: 'v3', auth: oauthClient });
-  const folderId = await getOrCreateMonthFolder(drive, dateStr);
+  const folderId = await getOrCreateMonthFolder(drive, INCOME_FOLDER_ID, monthFolderName(dateStr));
   const fileName = `Invoice-${invoiceNum}.pdf`;
   const file = await drive.files.create({ requestBody: { name: fileName, parents: [folderId], mimeType: 'application/pdf' }, media: { mimeType: 'application/pdf', body: Readable.from(pdfBuffer) }, fields: 'id, webViewLink' });
   await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
@@ -243,7 +273,7 @@ function isChecked(val) {
   return s === 'TRUE' || s === 'V' || s === 'YES' || s === '1' || s === 'כן';
 }
 
-app.get('/api/crm-data', async (req, res) => {
+app.get('/api/crm-data', requireAdmin, async (req, res) => {
   try {
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
@@ -274,7 +304,7 @@ app.get('/api/check-duplicate', async (req, res) => {
   } catch (err) { console.error('check-duplicate error:', err); res.json({ isDuplicate: false }); }
 });
 
-app.get('/api/dashboard-data', async (req, res) => {
+app.get('/api/dashboard-data', requireAdmin, async (req, res) => {
   try {
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
@@ -340,12 +370,34 @@ async function uploadFileToDrive(buffer, fileName, mimeType) {
   return file.data.webViewLink;
 }
 
-async function ensureSheetExists(sheets, sheetId, sheetName) {
+async function ensureSheetExists(sheets, sheetId, sheetName, headers) {
+  const hdrs = headers || ['תאריך ושעה','מספר הזמנה','קישור לאישור','סטטוס'];
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   if (!meta.data.sheets.some(s => s.properties.title === sheetName)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: sheetId, requestBody: { requests: [{ addSheet: { properties: { title: sheetName } } }] } });
-    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:D1', valueInputOption: 'RAW', requestBody: { values: [['תאריך ושעה','מספר הזמנה','קישור לאישור','סטטוס']] } });
+    const endCol = String.fromCharCode(64 + hdrs.length); // A,B,C...
+    await sheets.spreadsheets.values.update({ spreadsheetId: sheetId, range: sheetName + '!A1:' + endCol + '1', valueInputOption: 'RAW', requestBody: { values: [hdrs] } });
   }
+}
+
+// ── עובדים: אימות + עזרי גיליון ─────────────────────────────────────────────────
+function base64ToBufferGeneric(base64Data) {
+  const matches = base64Data.match(/^data:([\w\/\-\.]+);base64,(.+)$/);
+  if (!matches) throw new Error('קובץ לא תקין');
+  const mimeType = matches[1];
+  const ext = (mimeType.split('/')[1] || 'bin').split('+')[0];
+  return { mimeType, ext, buffer: Buffer.from(matches[2], 'base64') };
+}
+
+async function validateEmployee(sheets, name, password) {
+  if (!name || !password) return false;
+  await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:B' });
+  const rows = resp.data.values || [];
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === String(name).trim() && String(rows[i][1] || '') === String(password)) return true;
+  }
+  return false;
 }
 
 // כותב את קישור מסמך האישור לעמודה J, ובנוסף מסמן אוטומטית את עמודה G ("סופק") —
@@ -375,7 +427,7 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
 // ── חד-פעמי: מסמן "סופק" רטרואקטיבית לכל הזמנה שכבר יש לה אישור קבלה (עמודה J) ──
 // אבל טרם סומנה כסופק (עמודה G). לא נוגע בהזמנות בלי אישור קבלה.
 // הפעלה חד-פעמית: GET /api/backfill-supplied?key=run
-app.get('/api/backfill-supplied', async (req, res) => {
+app.get('/api/backfill-supplied', requireAdmin, async (req, res) => {
   try {
     if (req.query.key !== 'run') return res.status(400).json({ error: 'Missing ?key=run' });
     const client = await serviceAuth.getClient();
@@ -401,6 +453,95 @@ app.get('/api/backfill-supplied', async (req, res) => {
   } catch (err) { console.error('Backfill error:', err.message); res.status(500).json({ error: err.message }); }
 });
 
+// ── הוצאות ──────────────────────────────────────────────────────────────────────
+// קורא ישירות מה-Sheet שהאפליקציה הנפרדת "חשבוניות" כותבת אליו (לא יוצר/משנה שום דבר שם).
+// לשוניות לפי חודש, עמודות: A=תאריך, B=סכום, C=קישור לחשבונית
+app.get('/api/expenses-data', requireAdmin, async (req, res) => {
+  try {
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const meta = await sheets.spreadsheets.get({ spreadsheetId: EXPENSE_SHEET_ID, fields: 'sheets.properties.title' });
+    const tabNames = meta.data.sheets.map(s => s.properties.title);
+    const results = await Promise.all(tabNames.map(name =>
+      sheets.spreadsheets.values.get({ spreadsheetId: EXPENSE_SHEET_ID, range: name + '!A:C' }).catch(() => null)
+    ));
+    const expenses = [];
+    results.forEach(resp => {
+      if (!resp) return;
+      (resp.data.values || []).slice(1).forEach(r => {
+        if (r[0] && String(r[0]).trim()) expenses.push({ date: r[0] || '', amount: r[1] || '', receiptLink: r[2] || '' });
+      });
+    });
+    res.json({ expenses });
+  } catch (err) { console.error('expenses-data error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// ── עובדים: התחברות + נתונים אישיים + העלאת קבלה ────────────────────────────────
+app.post('/api/employee-login', async (req, res) => {
+  try {
+    const { name, password } = req.body || {};
+    if (!name || !password) return res.status(400).json({ ok: false, error: 'חסרים פרטים' });
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const ok = await validateEmployee(sheets, name, password);
+    if (!ok) return res.status(401).json({ ok: false, error: 'שם או סיסמה שגויים' });
+    res.json({ ok: true, name });
+  } catch (err) { console.error(err); res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.get('/api/employee-data', async (req, res) => {
+  try {
+    const name = req.headers['x-emp-name'];
+    const password = req.headers['x-emp-password'];
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const ok = await validateEmployee(sheets, name, password);
+    if (!ok) return res.status(401).json({ error: 'לא מורשה' });
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEE_HOURS_SHEET_NAME, EMPLOYEE_HOURS_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H' });
+    const rows = (resp.data.values || []).slice(1).filter(r => String(r[0] || '').trim() === String(name).trim());
+    const records = rows.map(r => ({ month: r[1] || '', hours: r[2] || '', commission: r[3] || '', paid: r[4] || '', paidDate: r[5] || '', receiptLink: r[6] || '', notes: r[7] || '' }));
+    res.json({ name, records });
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/employee-receipt', async (req, res) => {
+  try {
+    const name = req.headers['x-emp-name'];
+    const password = req.headers['x-emp-password'];
+    const { month, fileBase64 } = req.body || {};
+    if (!month || !fileBase64) return res.status(400).json({ error: 'חסרים פרטים (חודש/קובץ)' });
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const ok = await validateEmployee(sheets, name, password);
+    if (!ok) return res.status(401).json({ error: 'לא מורשה' });
+
+    const { Readable } = require('stream');
+    const { mimeType, ext, buffer } = base64ToBufferGeneric(fileBase64);
+    const drive = google.drive({ version: 'v3', auth: oauthClient });
+    // נשמר בתוך תיקיית-משנה לפי חודש, באותו פורמט/היגיון כמו תיקיות ההכנסות
+    const folderId = await getOrCreateMonthFolder(drive, EMPLOYEE_RECEIPTS_FOLDER_ID, month);
+    const uploadName = `${name}_${month}_קבלה.${ext}`;
+    const file = await drive.files.create({ requestBody: { name: uploadName, parents: [folderId] }, media: { mimeType, body: Readable.from(buffer) }, fields: 'id, webViewLink' });
+    await drive.permissions.create({ fileId: file.data.id, requestBody: { role: 'reader', type: 'anyone' } });
+    const link = file.data.webViewLink;
+
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEE_HOURS_SHEET_NAME, EMPLOYEE_HOURS_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H' });
+    const rows = resp.data.values || [];
+    let targetRow = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === String(name).trim() && String(rows[i][1] || '').trim() === String(month).trim()) { targetRow = i + 1; break; }
+    }
+    if (targetRow === -1) {
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[name, month, '', '', '', '', link, '']] } });
+    } else {
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!G' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[link]] } });
+    }
+    res.json({ success: true, link });
+  } catch (err) { console.error('employee-receipt error:', err); res.status(500).json({ error: err.message }); }
+});
+
 app.post('/confirmation', async (req, res) => {
   try {
     const { orderNum, confirmations, photos, photo, signature, timestamp } = req.body;
@@ -419,7 +560,7 @@ app.post('/confirmation', async (req, res) => {
 });
 
 // ── Upload Zoho Invoice to Drive + Sheets ─────────────────────────────────────
-app.post('/api/upload-zoho-invoice', async (req, res) => {
+app.post('/api/upload-zoho-invoice', requireAdmin, async (req, res) => {
   try {
     let { invoiceNumber } = req.body;
     if (!invoiceNumber) return res.status(400).json({ error: 'Missing invoiceNumber' });
