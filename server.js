@@ -348,6 +348,9 @@ async function ensureSheetExists(sheets, sheetId, sheetName) {
   }
 }
 
+// כותב את קישור מסמך האישור לעמודה J, ובנוסף מסמן אוטומטית את עמודה G ("סופק") —
+// כך שברגע שמתקבל אישור קבלה ההזמנה עוברת לסטטוס "סופק", גם אם היא דחופה (עמודה F),
+// כי זו אותה שורה/עמודה ללא תלות בדגל הדחיפות.
 async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
   try {
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:A' });
@@ -355,7 +358,17 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
     let targetRow = -1;
     for (let i = 1; i < rows.length; i++) { if (String(rows[i][0]||'').includes(String(orderNum).trim())) { targetRow = i + 1; break; } }
     if (targetRow === -1) { console.log('Order not found:', orderNum); return; }
-    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!J' + targetRow, valueInputOption: 'RAW', requestBody: { values: [[docLink]] } });
+    await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: ORDERS_SHEET_NAME + '!G' + targetRow, values: [[true]] },
+          { range: ORDERS_SHEET_NAME + '!J' + targetRow, values: [[docLink]] }
+        ]
+      }
+    });
+    console.log('✅ Order marked as supplied (סופק) + confirmation link written, row', targetRow);
   } catch (err) { console.error('Failed to write link:', err.message); }
 }
 
