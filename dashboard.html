@@ -164,8 +164,8 @@ return String(row.orderNum||'').includes('דחוף')||String(row.orderNum||'').t
 }
 
 function getStatus(row){
-if(isUrgent(row))return 'urgent';
 if(isChecked(row.supplied))return 'done';
+if(isUrgent(row))return 'urgent';
 return 'open';
 }
 
