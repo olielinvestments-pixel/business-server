@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>האזור האישי שלי</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
+.top{background:white;border-bottom:1px solid #e5e7eb;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+.top h1{font-size:17px;font-weight:600;color:#111}
+.logout-btn{padding:6px 14px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:12px;cursor:pointer}
+.container{padding:12px;max-width:520px;margin:0 auto}
+
+.login-gate{position:fixed;inset:0;background:#f4f5f7;display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.login-box{background:white;border:1px solid #e5e7eb;border-radius:14px;padding:28px 24px;width:100%;max-width:320px;text-align:center}
+.login-box h2{font-size:16px;margin-bottom:16px;color:#111}
+.login-box input{width:100%;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;font-size:14px;outline:none;margin-bottom:10px}
+.login-box input:focus{border-color:#93c5fd}
+.login-box button{width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}
+.login-box .err{color:#dc2626;font-size:12px;margin-top:8px;min-height:14px}
+
+.upload-panel{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
+.upload-panel h3{font-size:14px;font-weight:600;color:#111;margin-bottom:10px}
+.upload-panel .row{display:flex;gap:8px;margin-bottom:8px}
+.upload-panel select,.upload-panel input[type=file]{flex:1;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px;background:white}
+.upload-btn{width:100%;padding:10px;background:#059669;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600}
+.upload-btn:disabled{background:#9ca3af;cursor:not-allowed}
+.upload-status{margin-top:8px;font-size:12px;padding:6px 10px;border-radius:8px;display:none}
+.upload-status.success{background:#dcfce7;color:#15803d;display:block}
+.upload-status.error{background:#fee2e2;color:#dc2626;display:block}
+.upload-status.loading{background:#dbeafe;color:#1d4ed8;display:block}
+
+.cards{display:flex;flex-direction:column;gap:10px}
+.card{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px}
+.card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.card-month{font-size:15px;font-weight:600;color:#111}
+.badge{font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500}
+.b-paid{background:#dcfce7;color:#15803d}
+.b-unpaid{background:#fef3c7;color:#92400e}
+.card-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;margin-bottom:10px}
+.field-label{font-size:11px;color:#6b7280;margin-bottom:2px}
+.field-val{font-size:13px;color:#111;font-weight:500}
+.card-footer{display:flex;gap:8px;padding-top:10px;border-top:1px solid #f3f4f6;flex-wrap:wrap}
+.link-btn{font-size:12px;color:#1d4ed8;display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;text-decoration:none;white-space:nowrap}
+.link-btn.no-link{color:#9ca3af;border-color:#e5e7eb;background:#f9fafb;cursor:default}
+.empty{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px}
+.updated{font-size:11px;color:#9ca3af;text-align:center;padding:8px}
+</style>
+</head>
+<body>
+
+<div class="login-gate" id="login-gate">
+<div class="login-box">
+<h2>👋 האזור האישי שלי</h2>
+<input type="text" id="login-name" placeholder="שם מלא">
+<input type="password" id="login-pass" placeholder="סיסמה" onkeydown="if(event.key==='Enter')doLogin()">
+<button onclick="doLogin()">כניסה</button>
+<div class="err" id="login-err"></div>
+</div>
+</div>
+
+<div class="top">
+<h1 id="top-title">האזור האישי שלי</h1>
+<button class="logout-btn" onclick="logout()">התנתקות</button>
+</div>
+
+<div class="container">
+
+<div class="upload-panel">
+<h3>📎 העלאת קבלה לחודש</h3>
+<div class="row">
+<select id="upload-month"></select>
+</div>
+<div class="row">
+<input type="file" id="upload-file" accept="image/*,application/pdf">
+</div>
+<button class="upload-btn" onclick="uploadReceipt()">העלה קבלה</button>
+<div class="upload-status" id="upload-status"></div>
+</div>
+
+<div class="cards" id="cards"></div>
+<div class="updated" id="updated"></div>
+</div>
+
+<script>
+let empName='';
+let empPass='';
+let records=[];
+
+function authHeaders(){
+return {'x-emp-name':empName,'x-emp-password':empPass};
+}
+
+function showLoginGate(err){
+document.getElementById('login-gate').style.display='flex';
+document.getElementById('login-err').textContent=err||'';
+}
+
+function logout(){
+localStorage.removeItem('empName');
+localStorage.removeItem('empPass');
+empName='';empPass='';
+document.getElementById('cards').innerHTML='';
+showLoginGate('');
+}
+
+async function doLogin(){
+const name=document.getElementById('login-name').value.trim();
+const pass=document.getElementById('login-pass').value;
+const errEl=document.getElementById('login-err');
+errEl.textContent='';
+if(!name||!pass){errEl.textContent='נא למלא שם וסיסמה';return;}
+try{
+const r=await fetch('/api/employee-login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass})});
+const d=await r.json();
+if(d.ok){
+empName=name;empPass=pass;
+localStorage.setItem('empName',name);
+localStorage.setItem('empPass',pass);
+document.getElementById('login-gate').style.display='none';
+document.getElementById('top-title').textContent='שלום, '+name;
+load();
+}else{
+errEl.textContent=d.error||'שם או סיסמה שגויים';
+}
+}catch(e){errEl.textContent='שגיאת חיבור: '+e.message;}
+}
+
+function fmtMoney(v){
+if(!v)return '—';
+const n=parseFloat(String(v).replace(/[^0-9.]/g,''));
+return isNaN(n)?v:'₪'+Math.round(n).toLocaleString();
+}
+
+function isChecked(val){
+if(val===true)return true;
+const s=String(val||'').trim().toUpperCase();
+return s==='TRUE'||s==='V'||s==='YES'||s==='1'||s==='כן';
+}
+
+function linkBtn(url,icon,label){
+if(!url||!url.trim())return `<span class="link-btn no-link">${icon} ${label}</span>`;
+return `<a href="${url}" target="_blank" class="link-btn">${icon} ${label}</a>`;
+}
+
+function renderRecordCard(r){
+const paid=isChecked(r.paid)||(r.paid&&parseFloat(String(r.paid).replace(/[^0-9.]/g,''))>0);
+return `<div class="card">
+<div class="card-header">
+<span class="card-month">${r.month||'—'}</span>
+<span class="badge ${paid?'b-paid':'b-unpaid'}">${paid?'שולם':'טרם שולם'}</span>
+</div>
+<div class="card-grid">
+<div><div class="field-label">שעות</div><div class="field-val">${r.hours||'—'}</div></div>
+<div><div class="field-label">עמלות ממכירה</div><div class="field-val">${fmtMoney(r.commission)}</div></div>
+<div><div class="field-label">שולם</div><div class="field-val">${fmtMoney(r.paid)}</div></div>
+<div><div class="field-label">תאריך תשלום</div><div class="field-val">${r.paidDate||'—'}</div></div>
+</div>
+${r.notes?`<div class="field-val" style="margin-bottom:10px">📝 ${r.notes}</div>`:''}
+<div class="card-footer">
+${linkBtn(r.receiptLink,'🧾','הקבלה שהעליתי')}
+</div>
+</div>`;
+}
+
+function populateMonthSelect(){
+const sel=document.getElementById('upload-month');
+const months=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+const now=new Date();
+const options=[];
+for(let i=0;i<6;i++){
+const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+options.push(months[d.getMonth()]+' '+d.getFullYear());
+}
+sel.innerHTML=options.map(m=>`<option value="${m}">${m}</option>`).join('');
+}
+
+function fileToBase64(file){
+return new Promise((resolve,reject)=>{
+const reader=new FileReader();
+reader.onload=()=>resolve(reader.result);
+reader.onerror=reject;
+reader.readAsDataURL(file);
+});
+}
+
+async function uploadReceipt(){
+const month=document.getElementById('upload-month').value;
+const fileInput=document.getElementById('upload-file');
+const statusEl=document.getElementById('upload-status');
+const btn=document.querySelector('.upload-btn');
+if(!fileInput.files||fileInput.files.length===0){
+statusEl.className='upload-status error';
+statusEl.textContent='נא לבחור קובץ';
+return;
+}
+statusEl.className='upload-status loading';
+statusEl.textContent='מעלה קבלה...';
+btn.disabled=true;
+try{
+const fileBase64=await fileToBase64(fileInput.files[0]);
+const r=await fetch('/api/employee-receipt',{
+method:'POST',
+headers:Object.assign({'Content-Type':'application/json'},authHeaders()),
+body:JSON.stringify({month,fileBase64})
+});
+if(r.status===401){showLoginGate('הפג תוקף החיבור, התחבר שוב');return;}
+const d=await r.json();
+if(d.success){
+statusEl.className='upload-status success';
+statusEl.textContent='✅ הקבלה הועלתה בהצלחה עבור '+month;
+fileInput.value='';
+load();
+}else{
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאה: '+(d.error||'לא ידוע');
+}
+}catch(e){
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאת חיבור: '+e.message;
+}finally{btn.disabled=false;}
+}
+
+async function load(){
+document.getElementById('updated').textContent='טוען...';
+try{
+const r=await fetch('/api/employee-data',{headers:authHeaders()});
+if(r.status===401){showLoginGate('הפג תוקף החיבור, התחבר שוב');return;}
+const d=await r.json();
+if(d.error)throw new Error(d.error);
+records=d.records||[];
+const container=document.getElementById('cards');
+if(records.length===0){
+container.innerHTML='<div class="empty">אין עדיין נתונים</div>';
+}else{
+records.sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+container.innerHTML=records.map(renderRecordCard).join('');
+}
+document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
+}catch(e){
+document.getElementById('updated').textContent='שגיאה: '+e.message;
+}
+}
+
+populateMonthSelect();
+const savedName=localStorage.getItem('empName');
+const savedPass=localStorage.getItem('empPass');
+if(savedName&&savedPass){
+empName=savedName;empPass=savedPass;
+document.getElementById('login-gate').style.display='none';
+document.getElementById('top-title').textContent='שלום, '+savedName;
+load();
+}else{
+showLoginGate('');
+}
+</script>
+</body>
+</html>
