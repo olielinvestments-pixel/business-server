@@ -372,6 +372,35 @@ async function writeConfirmationLinkToOrders(sheets, orderNum, docLink) {
   } catch (err) { console.error('Failed to write link:', err.message); }
 }
 
+// ── חד-פעמי: מסמן "סופק" רטרואקטיבית לכל הזמנה שכבר יש לה אישור קבלה (עמודה J) ──
+// אבל טרם סומנה כסופק (עמודה G). לא נוגע בהזמנות בלי אישור קבלה.
+// הפעלה חד-פעמית: GET /api/backfill-supplied?key=run
+app.get('/api/backfill-supplied', async (req, res) => {
+  try {
+    if (req.query.key !== 'run') return res.status(400).json({ error: 'Missing ?key=run' });
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: ORDERS_SHEET_NAME + '!A:J' });
+    const rows = resp.data.values || [];
+    const updates = [];
+    const updatedOrders = [];
+    for (let i = 1; i < rows.length; i++) {
+      const orderNum = rows[i][0];
+      const gVal = rows[i][6];
+      const jVal = rows[i][9];
+      if (orderNum && jVal && String(jVal).trim() && !isChecked(gVal)) {
+        updates.push({ range: ORDERS_SHEET_NAME + '!G' + (i + 1), values: [[true]] });
+        updatedOrders.push(String(orderNum));
+      }
+    }
+    if (updates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { valueInputOption: 'RAW', data: updates } });
+    }
+    console.log('✅ Backfill complete. Orders marked as supplied:', updatedOrders.join(', ') || '(none)');
+    res.json({ success: true, updatedCount: updates.length, updatedOrders });
+  } catch (err) { console.error('Backfill error:', err.message); res.status(500).json({ error: err.message }); }
+});
+
 app.post('/confirmation', async (req, res) => {
   try {
     const { orderNum, confirmations, photos, photo, signature, timestamp } = req.body;
