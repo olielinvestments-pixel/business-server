@@ -85,6 +85,14 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .emp-row .save-btn{padding:7px 14px;background:#059669;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600}
 .emp-row .save-btn:disabled{background:#9ca3af;cursor:not-allowed}
 .emp-admin-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;margin-bottom:10px;cursor:pointer}
+.emp-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.emp-tabs::-webkit-scrollbar{display:none}
+.emp-tab{font-size:12px;padding:6px 14px;border-radius:20px;white-space:nowrap;border:1px solid #e5e7eb;color:#6b7280;background:white;cursor:pointer;flex-shrink:0;font-weight:500}
+.emp-tab.active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:600}
+.emp-row select.f-month{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%;background:white}
+.emp-row .f-computed{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%;background:#f3f4f6;color:#111;font-weight:600;box-sizing:border-box;min-height:30px;display:flex;align-items:center}
+.emp-rate-edit{display:flex;align-items:center;gap:4px;font-size:12px;color:#374151}
+.emp-rate-edit input{width:70px;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;font-size:12px}
 @media(min-width:640px){
 .stats{grid-template-columns:repeat(4,1fr)}
 .cards{display:grid;grid-template-columns:repeat(2,1fr)}
@@ -146,8 +154,22 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 <script>
 let allData={orders:[],service:[],expenses:[],employees:[],employeeRecords:[]};
 let currentTab='all';
+let selectedEmpName=null;
+const HEBREW_MONTHS=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
 
 function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
+
+function buildMonthOptions(selected){
+const now=new Date();
+const opts=[];
+for(let i=-2;i<=24;i++){
+const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+opts.push(HEBREW_MONTHS[d.getMonth()]+' '+d.getFullYear());
+}
+if(selected&&!opts.includes(selected))opts.unshift(selected);
+if(!selected)opts.unshift('');
+return opts.map(m=>`<option value="${esc(m)}"${m===selected?' selected':''}>${m?esc(m):'בחר חודש...'}</option>`).join('');
+}
 
 // ── התחברות מנהל ─────────────────────────────────────────────────────────────
 function authHeaders(){
@@ -322,18 +344,27 @@ ${linkBtn(r.receiptLink,'🧾','קבלה')}
 </div>`;
 }
 
-function employeeRecordRow(name,r){
+function employeeRecordRow(name,r,rate){
 const month=r.month||'';
-return `<div class="emp-row" data-emp="${esc(name)}">
-<div class="f-group"><label>חודש</label><input type="text" class="f-month" value="${esc(month)}" placeholder="יולי 2026"></div>
-<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}"></div>
-<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}"></div>
-<div class="f-group"><label>שולם</label><input type="text" class="f-paid" value="${esc(r.paid)}"></div>
+return `<div class="emp-row" data-emp="${esc(name)}" data-rate="${esc(rate||0)}">
+<div class="f-group"><label>חודש</label><select class="f-month">${buildMonthOptions(month)}</select></div>
+<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}" oninput="updateComputedPay(this)"></div>
+<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}" oninput="updateComputedPay(this)"></div>
+<div class="f-group"><label>סכום לתשלום (אוטומטי)</label><div class="f-computed">${fmtMoney(r.paid)}</div></div>
 <div class="f-group"><label>תאריך תשלום</label><input type="text" class="f-paidDate" value="${esc(r.paidDate)}"></div>
 <div class="f-group" style="min-width:160px"><label>הערות</label><input type="text" class="f-notes" value="${esc(r.notes)}"></div>
 <div class="f-group"><label>קבלה</label>${linkBtn(r.receiptLink,'🧾','קבלה')}</div>
 <button class="save-btn" onclick="saveEmployeeRecord(this)">💾 שמור</button>
 </div>`;
+}
+
+function updateComputedPay(input){
+const row=input.closest('.emp-row');
+const rate=parseFloat(row.dataset.rate)||0;
+const hours=parseFloat(row.querySelector('.f-hours').value)||0;
+const commission=parseFloat(row.querySelector('.f-commission').value)||0;
+const total=Math.round((hours*rate+commission)*100)/100;
+row.querySelector('.f-computed').textContent=fmtMoney(total);
 }
 
 function renderEmployeesTab(){
@@ -346,6 +377,7 @@ let html=`<div class="emp-panel">
 <input type="text" id="new-emp-pass" placeholder="סיסמה">
 <input type="text" id="new-emp-phone" placeholder="טלפון">
 <input type="text" id="new-emp-notes" placeholder="הערות">
+<input type="text" id="new-emp-rate" placeholder="תעריף שעתי (₪)">
 </div>
 <label class="emp-admin-toggle"><input type="checkbox" id="new-emp-admin"> הרשאת מנהל (יוכל לראות ולערוך את כל העובדים)</label>
 <button class="emp-add-btn" onclick="addEmployee()">הוסף עובד</button>
@@ -354,34 +386,62 @@ let html=`<div class="emp-panel">
 let employees=allData.employees||[];
 if(q){employees=employees.filter(e=>String(e.name||'').toLowerCase().includes(q));}
 if(employees.length===0){
-html+='<div class="empty">אין עדיין עובדים רשומים</div>';
-}else{
-employees.forEach(emp=>{
+html+='<div class="empty">אין עובדים להצגה</div>';
+container.innerHTML=html;
+return;
+}
+if(!selectedEmpName||!employees.some(e=>e.name===selectedEmpName)){
+selectedEmpName=employees[0].name;
+}
+html+='<div class="emp-tabs">'+employees.map(e=>`<div class="emp-tab${e.name===selectedEmpName?' active':''}" data-name="${esc(e.name)}" onclick="selectEmpTab(this.dataset.name)">${esc(e.name)}</div>`).join('')+'</div>';
+const emp=employees.find(e=>e.name===selectedEmpName);
 const records=(allData.employeeRecords||[]).filter(r=>r.name===emp.name).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
 html+=`<div class="emp-card">
 <div class="emp-card-header">
 <h4>${esc(emp.name)}${emp.isAdmin?' <span style="font-size:11px;color:#7c3aed;font-weight:600">(מנהל)</span>':''}</h4>
 <label class="emp-admin-toggle" style="margin-bottom:0"><input type="checkbox" class="emp-admin-check" data-name="${esc(emp.name)}" ${emp.isAdmin?'checked':''} onchange="toggleEmployeeAdmin(this)"> הרשאת מנהל</label>
+<span class="emp-rate-edit">תעריף שעתי: <input type="text" class="emp-rate-input" data-name="${esc(emp.name)}" value="${esc(emp.rate||'')}" onchange="updateEmployeeRate(this)"> ₪/שעה</span>
 <span class="emp-meta">${esc(emp.phone||'')}${emp.notes?' · '+esc(emp.notes):''}</span>
 </div>
-${records.map(r=>employeeRecordRow(emp.name,r)).join('')}
-${employeeRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''})}
+${records.map(r=>employeeRecordRow(emp.name,r,emp.rate)).join('')}
+${employeeRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''},emp.rate)}
 </div>`;
-});
-}
 container.innerHTML=html;
+}
+
+function selectEmpTab(name){
+selectedEmpName=name;
+renderEmployeesTab();
+}
+
+async function updateEmployeeRate(input){
+const name=input.dataset.name;
+const emp=(allData.employees||[]).find(e=>e.name===name);
+if(!emp){return;}
+const rate=input.value.trim();
+input.disabled=true;
+try{
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:emp.isAdmin,rate})});
+const d=await r.json();
+if(d.success){
+await load();
+}else{
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+alert('שגיאת חיבור: '+e.message);
+}finally{input.disabled=false;}
 }
 
 async function saveEmployeeRecord(btn){
 const row=btn.closest('.emp-row');
 const name=row.dataset.emp;
-const month=row.querySelector('.f-month').value.trim();
-if(!month){alert('נא למלא חודש');return;}
+const month=row.querySelector('.f-month').value;
+if(!month){alert('נא לבחור חודש');return;}
 const payload={
 name,month,
 hours:row.querySelector('.f-hours').value.trim(),
 commission:row.querySelector('.f-commission').value.trim(),
-paid:row.querySelector('.f-paid').value.trim(),
 paidDate:row.querySelector('.f-paidDate').value.trim(),
 notes:row.querySelector('.f-notes').value.trim()
 };
@@ -409,6 +469,7 @@ const name=document.getElementById('new-emp-name').value.trim();
 const pass=document.getElementById('new-emp-pass').value.trim();
 const phone=document.getElementById('new-emp-phone').value.trim();
 const notes=document.getElementById('new-emp-notes').value.trim();
+const rate=document.getElementById('new-emp-rate').value.trim();
 const isAdmin=document.getElementById('new-emp-admin').checked;
 const statusEl=document.getElementById('emp-add-status');
 if(!name||!pass){
@@ -419,7 +480,7 @@ return;
 statusEl.className='upload-status loading';
 statusEl.textContent='מוסיף עובד...';
 try{
-const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass,phone,notes,isAdmin})});
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass,phone,notes,rate,isAdmin})});
 const d=await r.json();
 if(d.success){
 statusEl.className='upload-status success';
@@ -428,7 +489,9 @@ document.getElementById('new-emp-name').value='';
 document.getElementById('new-emp-pass').value='';
 document.getElementById('new-emp-phone').value='';
 document.getElementById('new-emp-notes').value='';
+document.getElementById('new-emp-rate').value='';
 document.getElementById('new-emp-admin').checked=false;
+selectedEmpName=name;
 await load();
 }else{
 statusEl.className='upload-status error';
@@ -447,7 +510,7 @@ if(!emp){checkbox.checked=!checkbox.checked;return;}
 const wanted=checkbox.checked;
 checkbox.disabled=true;
 try{
-const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:wanted})});
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,rate:emp.rate,isAdmin:wanted})});
 const d=await r.json();
 if(d.success){
 await load();
