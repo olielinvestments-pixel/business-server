@@ -46,6 +46,23 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .link-btn.no-link{color:#9ca3af;border-color:#e5e7eb;background:#f9fafb;cursor:default}
 .empty{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px}
 .updated{font-size:11px;color:#9ca3af;text-align:center;padding:8px}
+.admin-toggle-btn{padding:6px 12px;background:#7c3aed;color:white;border:none;border-radius:8px;font-size:12px;cursor:pointer;display:none;white-space:nowrap}
+.emp-panel{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
+.emp-panel h3{font-size:14px;font-weight:600;color:#111;margin-bottom:10px}
+.emp-panel .row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.emp-panel input{flex:1;min-width:100px;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px}
+.emp-add-btn{padding:8px 16px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600}
+.emp-card{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:10px}
+.emp-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+.emp-card-header h4{font-size:15px;font-weight:600;color:#111}
+.emp-card-header .emp-meta{font-size:12px;color:#6b7280}
+.emp-admin-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;margin-bottom:10px;cursor:pointer}
+.emp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px;padding:10px;background:#f9fafb;border-radius:8px}
+.emp-row .f-group{display:flex;flex-direction:column;gap:2px;min-width:90px}
+.emp-row .f-group label{font-size:10px;color:#6b7280}
+.emp-row .f-group input{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%}
+.emp-row .save-btn{padding:7px 14px;background:#059669;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600}
+.emp-row .save-btn:disabled{background:#9ca3af;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -62,11 +79,15 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 
 <div class="top">
 <h1 id="top-title">האזור האישי שלי</h1>
+<div style="display:flex;gap:6px;align-items:center">
+<button class="admin-toggle-btn" id="admin-toggle-btn" onclick="toggleView()">ניהול עובדים</button>
 <button class="logout-btn" onclick="logout()">התנתקות</button>
+</div>
 </div>
 
 <div class="container">
 
+<div id="personal-view">
 <div class="upload-panel">
 <h3>📎 העלאת קבלה לחודש</h3>
 <div class="row">
@@ -83,14 +104,27 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 <div class="updated" id="updated"></div>
 </div>
 
+<div id="admin-view" style="display:none">
+<div class="cards" id="admin-cards"></div>
+<div class="updated" id="admin-updated"></div>
+</div>
+
+</div>
+
 <script>
 let empName='';
 let empPass='';
 let records=[];
+let isAdminUser=false;
+let currentView='personal';
+let adminEmployees=[];
+let adminRecords=[];
 
 function authHeaders(){
 return {'x-emp-name':empName,'x-emp-password':empPass};
 }
+
+function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
 
 function showLoginGate(err){
 document.getElementById('login-gate').style.display='flex';
@@ -101,8 +135,26 @@ function logout(){
 localStorage.removeItem('empName');
 localStorage.removeItem('empPass');
 empName='';empPass='';
+isAdminUser=false;
+currentView='personal';
 document.getElementById('cards').innerHTML='';
+document.getElementById('admin-toggle-btn').style.display='none';
+document.getElementById('personal-view').style.display='';
+document.getElementById('admin-view').style.display='none';
 showLoginGate('');
+}
+
+function applyAdminState(isAdmin){
+isAdminUser=!!isAdmin;
+document.getElementById('admin-toggle-btn').style.display=isAdminUser?'block':'none';
+}
+
+function toggleView(){
+currentView=currentView==='personal'?'admin':'personal';
+document.getElementById('personal-view').style.display=currentView==='personal'?'':'none';
+document.getElementById('admin-view').style.display=currentView==='admin'?'':'none';
+document.getElementById('admin-toggle-btn').textContent=currentView==='personal'?'ניהול עובדים':'האזור שלי';
+if(currentView==='admin')loadAdminData();
 }
 
 async function doLogin(){
@@ -120,6 +172,7 @@ localStorage.setItem('empName',name);
 localStorage.setItem('empPass',pass);
 document.getElementById('login-gate').style.display='none';
 document.getElementById('top-title').textContent='שלום, '+name;
+applyAdminState(d.isAdmin);
 load();
 }else{
 errEl.textContent=d.error||'שם או סיסמה שגויים';
@@ -162,6 +215,161 @@ ${r.notes?`<div class="field-val" style="margin-bottom:10px">📝 ${r.notes}</di
 ${linkBtn(r.receiptLink,'🧾','הקבלה שהעליתי')}
 </div>
 </div>`;
+}
+
+function empAdminRecordRow(name,r){
+const month=r.month||'';
+return `<div class="emp-row" data-emp="${esc(name)}">
+<div class="f-group"><label>חודש</label><input type="text" class="f-month" value="${esc(month)}" placeholder="יולי 2026"></div>
+<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}"></div>
+<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}"></div>
+<div class="f-group"><label>שולם</label><input type="text" class="f-paid" value="${esc(r.paid)}"></div>
+<div class="f-group"><label>תאריך תשלום</label><input type="text" class="f-paidDate" value="${esc(r.paidDate)}"></div>
+<div class="f-group" style="min-width:160px"><label>הערות</label><input type="text" class="f-notes" value="${esc(r.notes)}"></div>
+<div class="f-group"><label>קבלה</label>${linkBtn(r.receiptLink,'🧾','קבלה')}</div>
+<button class="save-btn" onclick="saveEmpAdminRecord(this)">💾 שמור</button>
+</div>`;
+}
+
+function renderAdminEmployees(){
+const container=document.getElementById('admin-cards');
+let html=`<div class="emp-panel">
+<h3>➕ הוספת עובד חדש</h3>
+<div class="row">
+<input type="text" id="new-emp-name" placeholder="שם מלא">
+<input type="text" id="new-emp-pass" placeholder="סיסמה">
+<input type="text" id="new-emp-phone" placeholder="טלפון">
+<input type="text" id="new-emp-notes" placeholder="הערות">
+</div>
+<label class="emp-admin-toggle"><input type="checkbox" id="new-emp-admin"> הרשאת מנהל (יוכל לראות ולערוך את כל העובדים)</label>
+<button class="emp-add-btn" onclick="addEmpAdminEmployee()">הוסף עובד</button>
+<div class="upload-status" id="emp-add-status"></div>
+</div>`;
+if(adminEmployees.length===0){
+html+='<div class="empty">אין עדיין עובדים רשומים</div>';
+}else{
+adminEmployees.forEach(emp=>{
+const empRecords=adminRecords.filter(r=>r.name===emp.name).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+html+=`<div class="emp-card">
+<div class="emp-card-header">
+<h4>${esc(emp.name)}${emp.isAdmin?' <span style="font-size:11px;color:#7c3aed;font-weight:600">(מנהל)</span>':''}</h4>
+<label class="emp-admin-toggle" style="margin-bottom:0"><input type="checkbox" class="emp-admin-check" data-name="${esc(emp.name)}" ${emp.isAdmin?'checked':''} onchange="toggleEmpAdmin(this)"> הרשאת מנהל</label>
+<span class="emp-meta">${esc(emp.phone||'')}${emp.notes?' · '+esc(emp.notes):''}</span>
+</div>
+${empRecords.map(r=>empAdminRecordRow(emp.name,r)).join('')}
+${empAdminRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''})}
+</div>`;
+});
+}
+container.innerHTML=html;
+}
+
+async function loadAdminData(){
+document.getElementById('admin-updated').textContent='טוען...';
+try{
+const [rEmp,rRec]=await Promise.all([
+fetch('/api/admin/employees',{headers:authHeaders()}),
+fetch('/api/admin/employee-records',{headers:authHeaders()})
+]);
+if(rEmp.status===401||rRec.status===401){showLoginGate('הפג תוקף החיבור, התחבר שוב');return;}
+const dEmp=await rEmp.json();
+const dRec=await rRec.json();
+adminEmployees=dEmp.employees||[];
+adminRecords=dRec.records||[];
+renderAdminEmployees();
+document.getElementById('admin-updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
+}catch(e){
+document.getElementById('admin-updated').textContent='שגיאה: '+e.message;
+}
+}
+
+async function saveEmpAdminRecord(btn){
+const row=btn.closest('.emp-row');
+const name=row.dataset.emp;
+const month=row.querySelector('.f-month').value.trim();
+if(!month){alert('נא למלא חודש');return;}
+const payload={
+name,month,
+hours:row.querySelector('.f-hours').value.trim(),
+commission:row.querySelector('.f-commission').value.trim(),
+paid:row.querySelector('.f-paid').value.trim(),
+paidDate:row.querySelector('.f-paidDate').value.trim(),
+notes:row.querySelector('.f-notes').value.trim()
+};
+const origLabel=btn.textContent;
+btn.disabled=true;
+btn.textContent='שומר...';
+try{
+const r=await fetch('/api/admin/employee-records',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify(payload)});
+const d=await r.json();
+if(d.success){
+btn.textContent='✅ נשמר';
+await loadAdminData();
+}else{
+btn.textContent=origLabel;
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+btn.textContent=origLabel;
+alert('שגיאת חיבור: '+e.message);
+}finally{btn.disabled=false;}
+}
+
+async function addEmpAdminEmployee(){
+const name=document.getElementById('new-emp-name').value.trim();
+const pass=document.getElementById('new-emp-pass').value.trim();
+const phone=document.getElementById('new-emp-phone').value.trim();
+const notes=document.getElementById('new-emp-notes').value.trim();
+const isAdmin=document.getElementById('new-emp-admin').checked;
+const statusEl=document.getElementById('emp-add-status');
+if(!name||!pass){
+statusEl.className='upload-status error';
+statusEl.textContent='נא למלא שם וסיסמה';
+return;
+}
+statusEl.className='upload-status loading';
+statusEl.textContent='מוסיף עובד...';
+try{
+const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name,password:pass,phone,notes,isAdmin})});
+const d=await r.json();
+if(d.success){
+statusEl.className='upload-status success';
+statusEl.textContent='✅ העובד נוסף בהצלחה';
+document.getElementById('new-emp-name').value='';
+document.getElementById('new-emp-pass').value='';
+document.getElementById('new-emp-phone').value='';
+document.getElementById('new-emp-notes').value='';
+document.getElementById('new-emp-admin').checked=false;
+await loadAdminData();
+}else{
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאה: '+(d.error||'לא ידוע');
+}
+}catch(e){
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאת חיבור: '+e.message;
+}
+}
+
+async function toggleEmpAdmin(checkbox){
+const name=checkbox.dataset.name;
+const emp=adminEmployees.find(e=>e.name===name);
+if(!emp){checkbox.checked=!checkbox.checked;return;}
+const wanted=checkbox.checked;
+checkbox.disabled=true;
+try{
+const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:wanted})});
+const d=await r.json();
+if(d.success){
+await loadAdminData();
+}else{
+checkbox.checked=!wanted;
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+checkbox.checked=!wanted;
+alert('שגיאת חיבור: '+e.message);
+}finally{checkbox.disabled=false;}
 }
 
 function populateMonthSelect(){
@@ -229,6 +437,7 @@ const r=await fetch('/api/employee-data',{headers:authHeaders()});
 if(r.status===401){showLoginGate('הפג תוקף החיבור, התחבר שוב');return;}
 const d=await r.json();
 if(d.error)throw new Error(d.error);
+applyAdminState(d.isAdmin);
 records=d.records||[];
 const container=document.getElementById('cards');
 if(records.length===0){
