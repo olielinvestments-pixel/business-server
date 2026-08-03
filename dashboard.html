@@ -69,6 +69,21 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .login-box input:focus{border-color:#93c5fd}
 .login-box button{width:100%;padding:10px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600}
 .login-box .err{color:#dc2626;font-size:12px;margin-top:8px;min-height:14px}
+.emp-panel{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:12px}
+.emp-panel h3{font-size:14px;font-weight:600;color:#111;margin-bottom:10px}
+.emp-panel .row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.emp-panel input{flex:1;min-width:100px;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:13px}
+.emp-add-btn{padding:8px 16px;background:#2563eb;color:white;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600}
+.emp-card{background:white;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin-bottom:10px}
+.emp-card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+.emp-card-header h4{font-size:15px;font-weight:600;color:#111}
+.emp-card-header .emp-meta{font-size:12px;color:#6b7280}
+.emp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;margin-bottom:8px;padding:10px;background:#f9fafb;border-radius:8px}
+.emp-row .f-group{display:flex;flex-direction:column;gap:2px;min-width:90px}
+.emp-row .f-group label{font-size:10px;color:#6b7280}
+.emp-row .f-group input{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%}
+.emp-row .save-btn{padding:7px 14px;background:#059669;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600}
+.emp-row .save-btn:disabled{background:#9ca3af;cursor:not-allowed}
 @media(min-width:640px){
 .stats{grid-template-columns:repeat(4,1fr)}
 .cards{display:grid;grid-template-columns:repeat(2,1fr)}
@@ -120,6 +135,7 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 <div class="tab" onclick="setTab('service',this)">שירות פתוח <span class="cnt" id="c-service">0</span></div>
 <div class="tab" onclick="setTab('service-done',this)">שירות טופל <span class="cnt" id="c-service-done">0</span></div>
 <div class="tab" onclick="setTab('expenses',this)">הוצאות <span class="cnt" id="c-expenses">0</span></div>
+<div class="tab" onclick="setTab('employees',this)">עובדים <span class="cnt" id="c-employees">0</span></div>
 </div>
 
 <div class="cards" id="cards"></div>
@@ -127,8 +143,10 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 </div>
 
 <script>
-let allData={orders:[],service:[],expenses:[]};
+let allData={orders:[],service:[],expenses:[],employees:[],employeeRecords:[]};
 let currentTab='all';
+
+function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
 
 // ── התחברות מנהל ─────────────────────────────────────────────────────────────
 function authHeaders(){
@@ -303,8 +321,127 @@ ${linkBtn(r.receiptLink,'🧾','קבלה')}
 </div>`;
 }
 
+function employeeRecordRow(name,r){
+const month=r.month||'';
+return `<div class="emp-row" data-emp="${esc(name)}">
+<div class="f-group"><label>חודש</label><input type="text" class="f-month" value="${esc(month)}" placeholder="יולי 2026"></div>
+<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}"></div>
+<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}"></div>
+<div class="f-group"><label>שולם</label><input type="text" class="f-paid" value="${esc(r.paid)}"></div>
+<div class="f-group"><label>תאריך תשלום</label><input type="text" class="f-paidDate" value="${esc(r.paidDate)}"></div>
+<div class="f-group" style="min-width:160px"><label>הערות</label><input type="text" class="f-notes" value="${esc(r.notes)}"></div>
+<div class="f-group"><label>קבלה</label>${linkBtn(r.receiptLink,'🧾','קבלה')}</div>
+<button class="save-btn" onclick="saveEmployeeRecord(this)">💾 שמור</button>
+</div>`;
+}
+
+function renderEmployeesTab(){
+const container=document.getElementById('cards');
+const q=document.getElementById('search').value.trim().toLowerCase();
+let html=`<div class="emp-panel">
+<h3>➕ הוספת עובד חדש</h3>
+<div class="row">
+<input type="text" id="new-emp-name" placeholder="שם מלא">
+<input type="text" id="new-emp-pass" placeholder="סיסמה">
+<input type="text" id="new-emp-phone" placeholder="טלפון">
+<input type="text" id="new-emp-notes" placeholder="הערות">
+</div>
+<button class="emp-add-btn" onclick="addEmployee()">הוסף עובד</button>
+<div class="upload-status" id="emp-add-status"></div>
+</div>`;
+let employees=allData.employees||[];
+if(q){employees=employees.filter(e=>String(e.name||'').toLowerCase().includes(q));}
+if(employees.length===0){
+html+='<div class="empty">אין עדיין עובדים רשומים</div>';
+}else{
+employees.forEach(emp=>{
+const records=(allData.employeeRecords||[]).filter(r=>r.name===emp.name).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
+html+=`<div class="emp-card">
+<div class="emp-card-header">
+<h4>${esc(emp.name)}</h4>
+<span class="emp-meta">${esc(emp.phone||'')}${emp.notes?' · '+esc(emp.notes):''}</span>
+</div>
+${records.map(r=>employeeRecordRow(emp.name,r)).join('')}
+${employeeRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''})}
+</div>`;
+});
+}
+container.innerHTML=html;
+}
+
+async function saveEmployeeRecord(btn){
+const row=btn.closest('.emp-row');
+const name=row.dataset.emp;
+const month=row.querySelector('.f-month').value.trim();
+if(!month){alert('נא למלא חודש');return;}
+const payload={
+name,month,
+hours:row.querySelector('.f-hours').value.trim(),
+commission:row.querySelector('.f-commission').value.trim(),
+paid:row.querySelector('.f-paid').value.trim(),
+paidDate:row.querySelector('.f-paidDate').value.trim(),
+notes:row.querySelector('.f-notes').value.trim()
+};
+const origLabel=btn.textContent;
+btn.disabled=true;
+btn.textContent='שומר...';
+try{
+const r=await authedFetch('/api/admin/employee-records',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+const d=await r.json();
+if(d.success){
+btn.textContent='✅ נשמר';
+await load();
+}else{
+btn.textContent=origLabel;
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+btn.textContent=origLabel;
+alert('שגיאת חיבור: '+e.message);
+}finally{btn.disabled=false;}
+}
+
+async function addEmployee(){
+const name=document.getElementById('new-emp-name').value.trim();
+const pass=document.getElementById('new-emp-pass').value.trim();
+const phone=document.getElementById('new-emp-phone').value.trim();
+const notes=document.getElementById('new-emp-notes').value.trim();
+const statusEl=document.getElementById('emp-add-status');
+if(!name||!pass){
+statusEl.className='upload-status error';
+statusEl.textContent='נא למלא שם וסיסמה';
+return;
+}
+statusEl.className='upload-status loading';
+statusEl.textContent='מוסיף עובד...';
+try{
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass,phone,notes})});
+const d=await r.json();
+if(d.success){
+statusEl.className='upload-status success';
+statusEl.textContent='✅ העובד נוסף בהצלחה';
+document.getElementById('new-emp-name').value='';
+document.getElementById('new-emp-pass').value='';
+document.getElementById('new-emp-phone').value='';
+document.getElementById('new-emp-notes').value='';
+await load();
+}else{
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאה: '+(d.error||'לא ידוע');
+}
+}catch(e){
+statusEl.className='upload-status error';
+statusEl.textContent='שגיאת חיבור: '+e.message;
+}
+}
+
 function render(){
 const q=document.getElementById('search').value.trim().toLowerCase();
+if(currentTab==='employees'){
+renderEmployeesTab();
+updateCounts();
+return;
+}
 const isSvc=currentTab==='service'||currentTab==='service-done';
 const isExp=currentTab==='expenses';
 let rows=[];
@@ -354,6 +491,7 @@ document.getElementById('c-done').textContent=fo(r=>getStatus(r)==='done').lengt
 document.getElementById('c-service').textContent=s.filter(r=>!isChecked(r.fixed)).length;
 document.getElementById('c-service-done').textContent=s.filter(r=>isChecked(r.fixed)).length;
 document.getElementById('c-expenses').textContent=ex.length;
+document.getElementById('c-employees').textContent=(allData.employees||[]).length;
 const open=o.filter(r=>getStatus(r)==='open'||getStatus(r)==='urgent');
 document.getElementById('s-open').textContent=open.length;
 document.getElementById('s-urgent').textContent=o.filter(r=>getStatus(r)==='urgent').length;
@@ -371,12 +509,19 @@ document.getElementById('s-expenses').textContent='₪'+Math.round(thisMonthTota
 async function load(){
 document.getElementById('updated').textContent='טוען...';
 try{
-const [r,rExp]=await Promise.all([authedFetch('/api/crm-data'),authedFetch('/api/expenses-data')]);
+const [r,rExp,rEmp,rEmpRec]=await Promise.all([
+authedFetch('/api/crm-data'),
+authedFetch('/api/expenses-data'),
+authedFetch('/api/admin/employees'),
+authedFetch('/api/admin/employee-records')
+]);
 if(!r.ok)throw new Error('שגיאת שרת '+r.status);
 const d=await r.json();
 if(d.error)throw new Error(d.error);
 const dExp=rExp.ok?await rExp.json():{expenses:[]};
-allData={orders:d.orders,service:d.service,expenses:dExp.expenses||[]};
+const dEmp=rEmp.ok?await rEmp.json():{employees:[]};
+const dEmpRec=rEmpRec.ok?await rEmpRec.json():{records:[]};
+allData={orders:d.orders,service:d.service,expenses:dExp.expenses||[],employees:dEmp.employees||[],employeeRecords:dEmpRec.records||[]};
 render();
 document.getElementById('updated').textContent='עודכן: '+new Date().toLocaleString('he-IL');
 }catch(e){
