@@ -52,10 +52,16 @@ app.get('/dashboard', (req, res) => res.sendFile(path.join(__dirname, 'dashboard
 app.get('/confirmation-form', (req, res) => res.sendFile(path.join(__dirname, 'confirmation-form.html')));
 app.get('/employee', (req, res) => res.sendFile(path.join(__dirname, 'employee.html')));
 
+// כותרות HTTP חייבות להיות ISO-8859-1 - שם/סיסמה בעברית מגיעים מוצפנים ב-encodeURIComponent מהלקוח
+function decodeHeaderValue(v) {
+  if (v == null) return v;
+  try { return decodeURIComponent(v); } catch (e) { return v; }
+}
+
 // ── אימות מנהל (לדשבורד העסקי) ─────────────────────────────────────────────────
 function requireAdmin(req, res, next) {
   if (!ADMIN_PASSWORD) return next(); // אם לא הוגדרה סיסמה ב-env - לא חוסמים (תאימות לאחור)
-  const pass = req.headers['x-admin-password'] || req.query.adminPassword;
+  const pass = decodeHeaderValue(req.headers['x-admin-password']) || req.query.adminPassword;
   if (pass !== ADMIN_PASSWORD) return res.status(401).json({ error: 'לא מורשה' });
   next();
 }
@@ -406,10 +412,10 @@ async function validateEmployee(sheets, name, password) {
 // מאפשר גישה למנהל הראשי (סיסמת ADMIN_PASSWORD) *או* לעובד שסומן כ"מנהל" בגיליון העובדים
 async function requireAdminOrEmpAdmin(req, res, next) {
   if (!ADMIN_PASSWORD) return next(); // תאימות לאחור - בלי סיסמת מנהל מוגדרת לא חוסמים
-  const adminPass = req.headers['x-admin-password'] || req.query.adminPassword;
+  const adminPass = decodeHeaderValue(req.headers['x-admin-password']) || req.query.adminPassword;
   if (adminPass === ADMIN_PASSWORD) return next();
-  const name = req.headers['x-emp-name'];
-  const password = req.headers['x-emp-password'];
+  const name = decodeHeaderValue(req.headers['x-emp-name']);
+  const password = decodeHeaderValue(req.headers['x-emp-password']);
   if (!name || !password) return res.status(401).json({ error: 'לא מורשה' });
   try {
     const client = await serviceAuth.getClient();
@@ -511,8 +517,8 @@ app.post('/api/employee-login', async (req, res) => {
 
 app.get('/api/employee-data', async (req, res) => {
   try {
-    const name = req.headers['x-emp-name'];
-    const password = req.headers['x-emp-password'];
+    const name = decodeHeaderValue(req.headers['x-emp-name']);
+    const password = decodeHeaderValue(req.headers['x-emp-password']);
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
     const result = await validateEmployee(sheets, name, password);
@@ -527,8 +533,8 @@ app.get('/api/employee-data', async (req, res) => {
 
 app.post('/api/employee-receipt', async (req, res) => {
   try {
-    const name = req.headers['x-emp-name'];
-    const password = req.headers['x-emp-password'];
+    const name = decodeHeaderValue(req.headers['x-emp-name']);
+    const password = decodeHeaderValue(req.headers['x-emp-password']);
     const { month, fileBase64 } = req.body || {};
     if (!month || !fileBase64) return res.status(400).json({ error: 'חסרים פרטים (חודש/קובץ)' });
     const client = await serviceAuth.getClient();
