@@ -121,7 +121,7 @@ let adminEmployees=[];
 let adminRecords=[];
 
 function authHeaders(){
-return {'x-emp-name':empName,'x-emp-password':empPass};
+return {'x-emp-name':encodeURIComponent(empName),'x-emp-password':encodeURIComponent(empPass)};
 }
 
 function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
