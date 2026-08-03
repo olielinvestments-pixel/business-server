@@ -84,6 +84,7 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .emp-row .f-group input{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%}
 .emp-row .save-btn{padding:7px 14px;background:#059669;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600}
 .emp-row .save-btn:disabled{background:#9ca3af;cursor:not-allowed}
+.emp-admin-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;margin-bottom:10px;cursor:pointer}
 @media(min-width:640px){
 .stats{grid-template-columns:repeat(4,1fr)}
 .cards{display:grid;grid-template-columns:repeat(2,1fr)}
@@ -346,6 +347,7 @@ let html=`<div class="emp-panel">
 <input type="text" id="new-emp-phone" placeholder="טלפון">
 <input type="text" id="new-emp-notes" placeholder="הערות">
 </div>
+<label class="emp-admin-toggle"><input type="checkbox" id="new-emp-admin"> הרשאת מנהל (יוכל לראות ולערוך את כל העובדים)</label>
 <button class="emp-add-btn" onclick="addEmployee()">הוסף עובד</button>
 <div class="upload-status" id="emp-add-status"></div>
 </div>`;
@@ -358,7 +360,8 @@ employees.forEach(emp=>{
 const records=(allData.employeeRecords||[]).filter(r=>r.name===emp.name).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
 html+=`<div class="emp-card">
 <div class="emp-card-header">
-<h4>${esc(emp.name)}</h4>
+<h4>${esc(emp.name)}${emp.isAdmin?' <span style="font-size:11px;color:#7c3aed;font-weight:600">(מנהל)</span>':''}</h4>
+<label class="emp-admin-toggle" style="margin-bottom:0"><input type="checkbox" class="emp-admin-check" data-name="${esc(emp.name)}" ${emp.isAdmin?'checked':''} onchange="toggleEmployeeAdmin(this)"> הרשאת מנהל</label>
 <span class="emp-meta">${esc(emp.phone||'')}${emp.notes?' · '+esc(emp.notes):''}</span>
 </div>
 ${records.map(r=>employeeRecordRow(emp.name,r)).join('')}
@@ -406,6 +409,7 @@ const name=document.getElementById('new-emp-name').value.trim();
 const pass=document.getElementById('new-emp-pass').value.trim();
 const phone=document.getElementById('new-emp-phone').value.trim();
 const notes=document.getElementById('new-emp-notes').value.trim();
+const isAdmin=document.getElementById('new-emp-admin').checked;
 const statusEl=document.getElementById('emp-add-status');
 if(!name||!pass){
 statusEl.className='upload-status error';
@@ -415,7 +419,7 @@ return;
 statusEl.className='upload-status loading';
 statusEl.textContent='מוסיף עובד...';
 try{
-const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass,phone,notes})});
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,password:pass,phone,notes,isAdmin})});
 const d=await r.json();
 if(d.success){
 statusEl.className='upload-status success';
@@ -424,6 +428,7 @@ document.getElementById('new-emp-name').value='';
 document.getElementById('new-emp-pass').value='';
 document.getElementById('new-emp-phone').value='';
 document.getElementById('new-emp-notes').value='';
+document.getElementById('new-emp-admin').checked=false;
 await load();
 }else{
 statusEl.className='upload-status error';
@@ -433,6 +438,27 @@ statusEl.textContent='שגיאה: '+(d.error||'לא ידוע');
 statusEl.className='upload-status error';
 statusEl.textContent='שגיאת חיבור: '+e.message;
 }
+}
+
+async function toggleEmployeeAdmin(checkbox){
+const name=checkbox.dataset.name;
+const emp=(allData.employees||[]).find(e=>e.name===name);
+if(!emp){checkbox.checked=!checkbox.checked;return;}
+const wanted=checkbox.checked;
+checkbox.disabled=true;
+try{
+const r=await authedFetch('/api/admin/employees',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:wanted})});
+const d=await r.json();
+if(d.success){
+await load();
+}else{
+checkbox.checked=!wanted;
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+checkbox.checked=!wanted;
+alert('שגיאת חיבור: '+e.message);
+}finally{checkbox.disabled=false;}
 }
 
 function render(){
