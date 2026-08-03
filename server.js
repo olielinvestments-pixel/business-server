@@ -542,6 +542,88 @@ app.post('/api/employee-receipt', async (req, res) => {
   } catch (err) { console.error('employee-receipt error:', err); res.status(500).json({ error: err.message }); }
 });
 
+// ── ניהול עובדים (מנהל בלבד) ────────────────────────────────────────────────────
+// רשימת כל העובדים (שם/סיסמה/טלפון/הערות)
+app.get('/api/admin/employees', requireAdmin, async (req, res) => {
+  try {
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:D' });
+    const rows = (resp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim());
+    const employees = rows.map(r => ({ name: r[0] || '', password: r[1] || '', phone: r[2] || '', notes: r[3] || '' }));
+    res.json({ employees });
+  } catch (err) { console.error('admin/employees GET error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// הוספה/עדכון עובד (מזוהה לפי שם - אם קיים מעדכן, אחרת מוסיף שורה חדשה)
+app.post('/api/admin/employees', requireAdmin, async (req, res) => {
+  try {
+    const { name, password, phone, notes } = req.body || {};
+    if (!name || !password) return res.status(400).json({ error: 'חסר שם או סיסמה' });
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:A' });
+    const rows = resp.data.values || [];
+    let targetRow = -1;
+    for (let i = 1; i < rows.length; i++) { if (String(rows[i][0] || '').trim() === String(name).trim()) { targetRow = i + 1; break; } }
+    const values = [[name, password, phone || '', notes || '']];
+    if (targetRow === -1) {
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:D', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values } });
+    } else {
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A' + targetRow + ':D' + targetRow, valueInputOption: 'RAW', requestBody: { values } });
+    }
+    res.json({ success: true });
+  } catch (err) { console.error('admin/employees POST error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// כל רשומות השעות/עמלות/תשלומים של כל העובדים (לא מסונן לעובד ספציפי - למנהל)
+app.get('/api/admin/employee-records', requireAdmin, async (req, res) => {
+  try {
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEE_HOURS_SHEET_NAME, EMPLOYEE_HOURS_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H' });
+    const rows = (resp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim());
+    const records = rows.map(r => ({ name: r[0] || '', month: r[1] || '', hours: r[2] || '', commission: r[3] || '', paid: r[4] || '', paidDate: r[5] || '', receiptLink: r[6] || '', notes: r[7] || '' }));
+    res.json({ records });
+  } catch (err) { console.error('admin/employee-records GET error:', err); res.status(500).json({ error: err.message }); }
+});
+
+// הוספה/עדכון רשומת חודש לעובד (מזוהה לפי שם+חודש). לא נוגע בקישור לקבלה - זה מתעדכן רק ע"י העובד עצמו.
+app.post('/api/admin/employee-records', requireAdmin, async (req, res) => {
+  try {
+    const { name, month, hours, commission, paid, paidDate, notes } = req.body || {};
+    if (!name || !month) return res.status(400).json({ error: 'חסר שם עובד או חודש' });
+    const client = await serviceAuth.getClient();
+    const sheets = google.sheets({ version: 'v4', auth: client });
+    await ensureSheetExists(sheets, SHEET_ID, EMPLOYEE_HOURS_SHEET_NAME, EMPLOYEE_HOURS_HEADERS);
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H' });
+    const rows = resp.data.values || [];
+    let targetRow = -1;
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0] || '').trim() === String(name).trim() && String(rows[i][1] || '').trim() === String(month).trim()) { targetRow = i + 1; break; }
+    }
+    if (targetRow === -1) {
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[name, month, hours || '', commission || '', paid || '', paidDate || '', '', notes || '']] } });
+    } else {
+      // עדכון B עד F ו-H, בלי לגעת ב-G (קישור לקבלה)
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: {
+          valueInputOption: 'RAW',
+          data: [
+            { range: EMPLOYEE_HOURS_SHEET_NAME + '!C' + targetRow + ':F' + targetRow, values: [[hours || '', commission || '', paid || '', paidDate || '']] },
+            { range: EMPLOYEE_HOURS_SHEET_NAME + '!H' + targetRow, values: [[notes || '']] }
+          ]
+        }
+      });
+    }
+    res.json({ success: true });
+  } catch (err) { console.error('admin/employee-records POST error:', err); res.status(500).json({ error: err.message }); }
+});
+
 app.post('/confirmation', async (req, res) => {
   try {
     const { orderNum, confirmations, photos, photo, signature, timestamp } = req.body;
