@@ -162,7 +162,7 @@ function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
 function buildMonthOptions(selected){
 const now=new Date();
 const opts=[];
-for(let i=-2;i<=24;i++){
+for(let i=-2;i<=1;i++){
 const d=new Date(now.getFullYear(),now.getMonth()-i,1);
 opts.push(HEBREW_MONTHS[d.getMonth()]+' '+d.getFullYear());
 }
