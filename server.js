@@ -35,7 +35,7 @@ const EMPLOYEES_SHEET_NAME = process.env.EMPLOYEES_SHEET_NAME || 'עובדים';
 const EMPLOYEE_HOURS_SHEET_NAME = process.env.EMPLOYEE_HOURS_SHEET_NAME || 'שעות ותשלומים';
 const EMPLOYEE_RECEIPTS_FOLDER_ID = process.env.EMPLOYEE_RECEIPTS_FOLDER_ID || process.env.CONFIRMATIONS_FOLDER_ID;
 
-const EMPLOYEES_HEADERS = ['שם עובד', 'סיסמה', 'טלפון', 'הערות', 'מנהל'];
+const EMPLOYEES_HEADERS = ['שם עובד', 'סיסמה', 'טלפון', 'הערות', 'מנהל', 'תעריף שעתי'];
 const EMPLOYEE_HOURS_HEADERS = ['שם עובד', 'חודש', 'שעות', 'עמלות ממכירה', 'תשלום ששולם', 'תאריך תשלום', 'קישור לקבלה', 'הערות'];
 
 const ZOHO_CLIENT_ID = process.env.ZOHO_CLIENT_ID;
@@ -395,18 +395,29 @@ function base64ToBufferGeneric(base64Data) {
   return { mimeType, ext, buffer: Buffer.from(matches[2], 'base64') };
 }
 
-// מחזיר false אם לא תקין, או אובייקט { isAdmin } אם שם+סיסמה תואמים (עמודה E = "מנהל")
+// מחזיר false אם לא תקין, או אובייקט { isAdmin, rate } אם שם+סיסמה תואמים (עמודה E = "מנהל", עמודה F = "תעריף שעתי")
 async function validateEmployee(sheets, name, password) {
   if (!name || !password) return false;
   await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
-  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:E' });
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:F' });
   const rows = resp.data.values || [];
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0] || '').trim() === String(name).trim() && String(rows[i][1] || '') === String(password)) {
-      return { isAdmin: isChecked(rows[i][4]) };
+      return { isAdmin: isChecked(rows[i][4]), rate: parseFloat(rows[i][5]) || 0 };
     }
   }
   return false;
+}
+
+// מאתר את התעריף השעתי של עובד לפי שם (משמש לחישוב אוטומטי של סכום התשלום)
+async function getEmployeeRate(sheets, name) {
+  await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
+  const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:F' });
+  const rows = resp.data.values || [];
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === String(name).trim()) return parseFloat(rows[i][5]) || 0;
+  }
+  return 0;
 }
 
 // מאפשר גישה למנהל הראשי (סיסמת ADMIN_PASSWORD) *או* לעובד שסומן כ"מנהל" בגיליון העובדים
@@ -575,9 +586,9 @@ app.get('/api/admin/employees', requireAdminOrEmpAdmin, async (req, res) => {
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
     await ensureSheetExists(sheets, SHEET_ID, EMPLOYEES_SHEET_NAME, EMPLOYEES_HEADERS);
-    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:E' });
+    const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:F' });
     const rows = (resp.data.values || []).slice(1).filter(r => r[0] && String(r[0]).trim());
-    const employees = rows.map(r => ({ name: r[0] || '', password: r[1] || '', phone: r[2] || '', notes: r[3] || '', isAdmin: isChecked(r[4]) }));
+    const employees = rows.map(r => ({ name: r[0] || '', password: r[1] || '', phone: r[2] || '', notes: r[3] || '', isAdmin: isChecked(r[4]), rate: r[5] || '' }));
     res.json({ employees });
   } catch (err) { console.error('admin/employees GET error:', err); res.status(500).json({ error: err.message }); }
 });
@@ -585,7 +596,7 @@ app.get('/api/admin/employees', requireAdminOrEmpAdmin, async (req, res) => {
 // הוספה/עדכון עובד (מזוהה לפי שם - אם קיים מעדכן, אחרת מוסיף שורה חדשה)
 app.post('/api/admin/employees', requireAdminOrEmpAdmin, async (req, res) => {
   try {
-    const { name, password, phone, notes, isAdmin } = req.body || {};
+    const { name, password, phone, notes, isAdmin, rate } = req.body || {};
     if (!name || !password) return res.status(400).json({ error: 'חסר שם או סיסמה' });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
@@ -594,11 +605,11 @@ app.post('/api/admin/employees', requireAdminOrEmpAdmin, async (req, res) => {
     const rows = resp.data.values || [];
     let targetRow = -1;
     for (let i = 1; i < rows.length; i++) { if (String(rows[i][0] || '').trim() === String(name).trim()) { targetRow = i + 1; break; } }
-    const values = [[name, password, phone || '', notes || '', isAdmin ? 'כן' : '']];
+    const values = [[name, password, phone || '', notes || '', isAdmin ? 'כן' : '', rate || '']];
     if (targetRow === -1) {
-      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:E', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values } });
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A:F', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values } });
     } else {
-      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A' + targetRow + ':E' + targetRow, valueInputOption: 'RAW', requestBody: { values } });
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: EMPLOYEES_SHEET_NAME + '!A' + targetRow + ':F' + targetRow, valueInputOption: 'RAW', requestBody: { values } });
     }
     res.json({ success: true });
   } catch (err) { console.error('admin/employees POST error:', err); res.status(500).json({ error: err.message }); }
@@ -618,12 +629,17 @@ app.get('/api/admin/employee-records', requireAdminOrEmpAdmin, async (req, res) 
 });
 
 // הוספה/עדכון רשומת חודש לעובד (מזוהה לפי שם+חודש). לא נוגע בקישור לקבלה - זה מתעדכן רק ע"י העובד עצמו.
+// סכום התשלום (עמודה E) מחושב אוטומטית: שעות × תעריף שעתי של העובד + עמלות ממכירה.
 app.post('/api/admin/employee-records', requireAdminOrEmpAdmin, async (req, res) => {
   try {
-    const { name, month, hours, commission, paid, paidDate, notes } = req.body || {};
+    const { name, month, hours, commission, paidDate, notes } = req.body || {};
     if (!name || !month) return res.status(400).json({ error: 'חסר שם עובד או חודש' });
     const client = await serviceAuth.getClient();
     const sheets = google.sheets({ version: 'v4', auth: client });
+    const rate = await getEmployeeRate(sheets, name);
+    const hoursNum = parseFloat(hours) || 0;
+    const commissionNum = parseFloat(commission) || 0;
+    const paid = Math.round((hoursNum * rate + commissionNum) * 100) / 100;
     await ensureSheetExists(sheets, SHEET_ID, EMPLOYEE_HOURS_SHEET_NAME, EMPLOYEE_HOURS_HEADERS);
     const resp = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H' });
     const rows = resp.data.values || [];
@@ -632,7 +648,7 @@ app.post('/api/admin/employee-records', requireAdminOrEmpAdmin, async (req, res)
       if (String(rows[i][0] || '').trim() === String(name).trim() && String(rows[i][1] || '').trim() === String(month).trim()) { targetRow = i + 1; break; }
     }
     if (targetRow === -1) {
-      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[name, month, hours || '', commission || '', paid || '', paidDate || '', '', notes || '']] } });
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: EMPLOYEE_HOURS_SHEET_NAME + '!A:H', valueInputOption: 'RAW', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[name, month, hours || '', commission || '', paid, paidDate || '', '', notes || '']] } });
     } else {
       // עדכון B עד F ו-H, בלי לגעת ב-G (קישור לקבלה)
       await sheets.spreadsheets.values.batchUpdate({
@@ -640,13 +656,13 @@ app.post('/api/admin/employee-records', requireAdminOrEmpAdmin, async (req, res)
         requestBody: {
           valueInputOption: 'RAW',
           data: [
-            { range: EMPLOYEE_HOURS_SHEET_NAME + '!C' + targetRow + ':F' + targetRow, values: [[hours || '', commission || '', paid || '', paidDate || '']] },
+            { range: EMPLOYEE_HOURS_SHEET_NAME + '!C' + targetRow + ':F' + targetRow, values: [[hours || '', commission || '', paid, paidDate || '']] },
             { range: EMPLOYEE_HOURS_SHEET_NAME + '!H' + targetRow, values: [[notes || '']] }
           ]
         }
       });
     }
-    res.json({ success: true });
+    res.json({ success: true, paid });
   } catch (err) { console.error('admin/employee-records POST error:', err); res.status(500).json({ error: err.message }); }
 });
 
