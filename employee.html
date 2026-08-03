@@ -63,6 +63,14 @@ body{font-family:Arial,sans-serif;background:#f4f5f7;color:#222;direction:rtl}
 .emp-row .f-group input{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%}
 .emp-row .save-btn{padding:7px 14px;background:#059669;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600}
 .emp-row .save-btn:disabled{background:#9ca3af;cursor:not-allowed}
+.emp-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.emp-tabs::-webkit-scrollbar{display:none}
+.emp-tab{font-size:12px;padding:6px 14px;border-radius:20px;white-space:nowrap;border:1px solid #e5e7eb;color:#6b7280;background:white;cursor:pointer;flex-shrink:0;font-weight:500}
+.emp-tab.active{background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;font-weight:600}
+.emp-row select.f-month{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%;background:white}
+.emp-row .f-computed{border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:12px;width:100%;background:#f3f4f6;color:#111;font-weight:600;box-sizing:border-box;min-height:30px;display:flex;align-items:center}
+.emp-rate-edit{display:flex;align-items:center;gap:4px;font-size:12px;color:#374151}
+.emp-rate-edit input{width:70px;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;font-size:12px}
 </style>
 </head>
 <body>
@@ -119,6 +127,20 @@ let isAdminUser=false;
 let currentView='personal';
 let adminEmployees=[];
 let adminRecords=[];
+let selectedAdminEmpName=null;
+const HEBREW_MONTHS=['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+function buildMonthOptions(selected){
+const now=new Date();
+const opts=[];
+for(let i=-2;i<=24;i++){
+const d=new Date(now.getFullYear(),now.getMonth()-i,1);
+opts.push(HEBREW_MONTHS[d.getMonth()]+' '+d.getFullYear());
+}
+if(selected&&!opts.includes(selected))opts.unshift(selected);
+if(!selected)opts.unshift('');
+return opts.map(m=>`<option value="${esc(m)}"${m===selected?' selected':''}>${m?esc(m):'בחר חודש...'}</option>`).join('');
+}
 
 function authHeaders(){
 return {'x-emp-name':encodeURIComponent(empName),'x-emp-password':encodeURIComponent(empPass)};
@@ -217,18 +239,27 @@ ${linkBtn(r.receiptLink,'🧾','הקבלה שהעליתי')}
 </div>`;
 }
 
-function empAdminRecordRow(name,r){
+function empAdminRecordRow(name,r,rate){
 const month=r.month||'';
-return `<div class="emp-row" data-emp="${esc(name)}">
-<div class="f-group"><label>חודש</label><input type="text" class="f-month" value="${esc(month)}" placeholder="יולי 2026"></div>
-<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}"></div>
-<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}"></div>
-<div class="f-group"><label>שולם</label><input type="text" class="f-paid" value="${esc(r.paid)}"></div>
+return `<div class="emp-row" data-emp="${esc(name)}" data-rate="${esc(rate||0)}">
+<div class="f-group"><label>חודש</label><select class="f-month">${buildMonthOptions(month)}</select></div>
+<div class="f-group"><label>שעות</label><input type="text" class="f-hours" value="${esc(r.hours)}" oninput="updateAdminComputedPay(this)"></div>
+<div class="f-group"><label>עמלות ממכירה</label><input type="text" class="f-commission" value="${esc(r.commission)}" oninput="updateAdminComputedPay(this)"></div>
+<div class="f-group"><label>סכום לתשלום (אוטומטי)</label><div class="f-computed">${fmtMoney(r.paid)}</div></div>
 <div class="f-group"><label>תאריך תשלום</label><input type="text" class="f-paidDate" value="${esc(r.paidDate)}"></div>
 <div class="f-group" style="min-width:160px"><label>הערות</label><input type="text" class="f-notes" value="${esc(r.notes)}"></div>
 <div class="f-group"><label>קבלה</label>${linkBtn(r.receiptLink,'🧾','קבלה')}</div>
 <button class="save-btn" onclick="saveEmpAdminRecord(this)">💾 שמור</button>
 </div>`;
+}
+
+function updateAdminComputedPay(input){
+const row=input.closest('.emp-row');
+const rate=parseFloat(row.dataset.rate)||0;
+const hours=parseFloat(row.querySelector('.f-hours').value)||0;
+const commission=parseFloat(row.querySelector('.f-commission').value)||0;
+const total=Math.round((hours*rate+commission)*100)/100;
+row.querySelector('.f-computed').textContent=fmtMoney(total);
 }
 
 function renderAdminEmployees(){
@@ -240,28 +271,58 @@ let html=`<div class="emp-panel">
 <input type="text" id="new-emp-pass" placeholder="סיסמה">
 <input type="text" id="new-emp-phone" placeholder="טלפון">
 <input type="text" id="new-emp-notes" placeholder="הערות">
+<input type="text" id="new-emp-rate" placeholder="תעריף שעתי (₪)">
 </div>
 <label class="emp-admin-toggle"><input type="checkbox" id="new-emp-admin"> הרשאת מנהל (יוכל לראות ולערוך את כל העובדים)</label>
 <button class="emp-add-btn" onclick="addEmpAdminEmployee()">הוסף עובד</button>
 <div class="upload-status" id="emp-add-status"></div>
 </div>`;
 if(adminEmployees.length===0){
-html+='<div class="empty">אין עדיין עובדים רשומים</div>';
-}else{
-adminEmployees.forEach(emp=>{
+html+='<div class="empty">אין עובדים להצגה</div>';
+container.innerHTML=html;
+return;
+}
+if(!selectedAdminEmpName||!adminEmployees.some(e=>e.name===selectedAdminEmpName)){
+selectedAdminEmpName=adminEmployees[0].name;
+}
+html+='<div class="emp-tabs">'+adminEmployees.map(e=>`<div class="emp-tab${e.name===selectedAdminEmpName?' active':''}" data-name="${esc(e.name)}" onclick="selectAdminEmpTab(this.dataset.name)">${esc(e.name)}</div>`).join('')+'</div>';
+const emp=adminEmployees.find(e=>e.name===selectedAdminEmpName);
 const empRecords=adminRecords.filter(r=>r.name===emp.name).sort((a,b)=>(b.month||'').localeCompare(a.month||''));
 html+=`<div class="emp-card">
 <div class="emp-card-header">
 <h4>${esc(emp.name)}${emp.isAdmin?' <span style="font-size:11px;color:#7c3aed;font-weight:600">(מנהל)</span>':''}</h4>
 <label class="emp-admin-toggle" style="margin-bottom:0"><input type="checkbox" class="emp-admin-check" data-name="${esc(emp.name)}" ${emp.isAdmin?'checked':''} onchange="toggleEmpAdmin(this)"> הרשאת מנהל</label>
+<span class="emp-rate-edit">תעריף שעתי: <input type="text" class="emp-rate-input" data-name="${esc(emp.name)}" value="${esc(emp.rate||'')}" onchange="updateAdminEmployeeRate(this)"> ₪/שעה</span>
 <span class="emp-meta">${esc(emp.phone||'')}${emp.notes?' · '+esc(emp.notes):''}</span>
 </div>
-${empRecords.map(r=>empAdminRecordRow(emp.name,r)).join('')}
-${empAdminRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''})}
+${empRecords.map(r=>empAdminRecordRow(emp.name,r,emp.rate)).join('')}
+${empAdminRecordRow(emp.name,{month:'',hours:'',commission:'',paid:'',paidDate:'',notes:'',receiptLink:''},emp.rate)}
 </div>`;
-});
-}
 container.innerHTML=html;
+}
+
+function selectAdminEmpTab(name){
+selectedAdminEmpName=name;
+renderAdminEmployees();
+}
+
+async function updateAdminEmployeeRate(input){
+const name=input.dataset.name;
+const emp=adminEmployees.find(e=>e.name===name);
+if(!emp){return;}
+const rate=input.value.trim();
+input.disabled=true;
+try{
+const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:emp.isAdmin,rate})});
+const d=await r.json();
+if(d.success){
+await loadAdminData();
+}else{
+alert('שגיאה: '+(d.error||'לא ידוע'));
+}
+}catch(e){
+alert('שגיאת חיבור: '+e.message);
+}finally{input.disabled=false;}
 }
 
 async function loadAdminData(){
@@ -286,13 +347,12 @@ document.getElementById('admin-updated').textContent='שגיאה: '+e.message;
 async function saveEmpAdminRecord(btn){
 const row=btn.closest('.emp-row');
 const name=row.dataset.emp;
-const month=row.querySelector('.f-month').value.trim();
-if(!month){alert('נא למלא חודש');return;}
+const month=row.querySelector('.f-month').value;
+if(!month){alert('נא לבחור חודש');return;}
 const payload={
 name,month,
 hours:row.querySelector('.f-hours').value.trim(),
 commission:row.querySelector('.f-commission').value.trim(),
-paid:row.querySelector('.f-paid').value.trim(),
 paidDate:row.querySelector('.f-paidDate').value.trim(),
 notes:row.querySelector('.f-notes').value.trim()
 };
@@ -320,6 +380,7 @@ const name=document.getElementById('new-emp-name').value.trim();
 const pass=document.getElementById('new-emp-pass').value.trim();
 const phone=document.getElementById('new-emp-phone').value.trim();
 const notes=document.getElementById('new-emp-notes').value.trim();
+const rate=document.getElementById('new-emp-rate').value.trim();
 const isAdmin=document.getElementById('new-emp-admin').checked;
 const statusEl=document.getElementById('emp-add-status');
 if(!name||!pass){
@@ -330,7 +391,7 @@ return;
 statusEl.className='upload-status loading';
 statusEl.textContent='מוסיף עובד...';
 try{
-const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name,password:pass,phone,notes,isAdmin})});
+const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name,password:pass,phone,notes,rate,isAdmin})});
 const d=await r.json();
 if(d.success){
 statusEl.className='upload-status success';
@@ -339,7 +400,9 @@ document.getElementById('new-emp-name').value='';
 document.getElementById('new-emp-pass').value='';
 document.getElementById('new-emp-phone').value='';
 document.getElementById('new-emp-notes').value='';
+document.getElementById('new-emp-rate').value='';
 document.getElementById('new-emp-admin').checked=false;
+selectedAdminEmpName=name;
 await loadAdminData();
 }else{
 statusEl.className='upload-status error';
@@ -358,7 +421,7 @@ if(!emp){checkbox.checked=!checkbox.checked;return;}
 const wanted=checkbox.checked;
 checkbox.disabled=true;
 try{
-const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,isAdmin:wanted})});
+const r=await fetch('/api/admin/employees',{method:'POST',headers:Object.assign({'Content-Type':'application/json'},authHeaders()),body:JSON.stringify({name:emp.name,password:emp.password,phone:emp.phone,notes:emp.notes,rate:emp.rate,isAdmin:wanted})});
 const d=await r.json();
 if(d.success){
 await loadAdminData();
