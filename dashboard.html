@@ -151,7 +151,7 @@ function esc(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
 
 // ── התחברות מנהל ─────────────────────────────────────────────────────────────
 function authHeaders(){
-return {'x-admin-password':localStorage.getItem('adminPassword')||''};
+return {'x-admin-password':encodeURIComponent(localStorage.getItem('adminPassword')||'')};
 }
 
 async function authedFetch(url,opts){
